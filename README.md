@@ -1,7 +1,6 @@
 ## Why this exists
 
-Most "AI agent" demos are a single API call in a script. This is the infrastructure around that call: the agent loop, a tool registry, session state, streaming  
- transport, and observability, each behind an interface so the pieces swap without a rewrite.
+Most "AI agent" demos are a single API call in a script. This is the infrastructure around that call: the agent loop, a tool registry, session state, streaming transport, and observability, each behind an interface so the pieces swap without a rewrite.
 
 ## Layout
 
