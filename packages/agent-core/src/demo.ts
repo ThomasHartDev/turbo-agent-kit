@@ -21,8 +21,12 @@ for (const prompt of prompts) {
 }
 
 console.log("\n--- telemetry ---");
-console.log(`LLM  p50/p95/p99: ${telemetry.percentile(50, "llm")}/${telemetry.percentile(95, "llm")}/${telemetry.percentile(99, "llm")}ms`);
-console.log(`Tool p50/p95/p99: ${telemetry.percentile(50, "tool")}/${telemetry.percentile(95, "tool")}/${telemetry.percentile(99, "tool")}ms`);
+console.log(
+  `LLM  p50/p95/p99: ${telemetry.percentile(50, "llm")}/${telemetry.percentile(95, "llm")}/${telemetry.percentile(99, "llm")}ms`,
+);
+console.log(
+  `Tool p50/p95/p99: ${telemetry.percentile(50, "tool")}/${telemetry.percentile(95, "tool")}/${telemetry.percentile(99, "tool")}ms`,
+);
 console.log(`events:   ${telemetry.all().length}`);
 for (const e of telemetry.all()) {
   console.log(`  [${e.type}] ${e.detail} - ${Math.round(e.ms)}ms`);

@@ -1,13 +1,17 @@
 {
-  "name": "podium-prep",
+  "name": "turbo-agent-kit",
   "private": true,
   "packageManager": "pnpm@10.33.0",
   "scripts": {
     "build": "turbo run build",
     "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "dev": "turbo run dev"
   },
   "devDependencies": {
+    "prettier": "^3.9.4",
     "turbo": "^2.5.6",
     "typescript": "^5.9.2"
   },
