@@ -49,7 +49,9 @@ export async function runAgentTurn(
     const tt0 = performance.now();
     let output: string;
     try {
-      output = tool ? await tool.run(result.toolCall.args) : `Unknown tool: ${result.toolCall.name}`;
+      output = tool
+        ? await tool.run(result.toolCall.args)
+        : `Unknown tool: ${result.toolCall.name}`;
     } catch (err) {
       output = `Tool error: ${(err as Error).message}`;
     }

@@ -47,7 +47,8 @@ export class MockLLMProvider implements LLMProvider {
 
     return {
       kind: "final",
-      content: "Happy to help. I can check availability or book an appointment. Which would you like?",
+      content:
+        "Happy to help. I can check availability or book an appointment. Which would you like?",
     };
   }
 }

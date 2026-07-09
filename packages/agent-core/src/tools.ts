@@ -11,7 +11,12 @@ export interface Tool extends ToolSpec {
   run(args: unknown): Promise<string>;
 }
 
-function defineTool<T>(spec: { name: string; description: string; schema: z.ZodType<T>; run: (args: T) => Promise<string> }): Tool {
+function defineTool<T>(spec: {
+  name: string;
+  description: string;
+  schema: z.ZodType<T>;
+  run: (args: T) => Promise<string>;
+}): Tool {
   return {
     name: spec.name,
     description: spec.description,
