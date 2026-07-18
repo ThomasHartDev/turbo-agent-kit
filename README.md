@@ -6,6 +6,7 @@ Most "AI agent" demos are a single API call in a script. This is the infrastruct
 
 - `packages/agent-core` — the framework-free agent loop, tools, and telemetry
 - `packages/llm` — the real LLM adapter over the Vercel AI SDK, key-gated with a mock fallback
+- `packages/config` — Zod-validated env loading shared across the workspace
 - `apps/server` — a Hono service that streams the agent over SSE
 - `apps/console` — a Next.js chat UI
 
@@ -26,6 +27,21 @@ await runAgentTurn(conversation, "book an appointment", llm, telemetry);
 ## Stack
 
 Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, and OpenTelemetry.
+
+## Concepts demonstrated
+
+- Schema-driven validation at the process boundary, coercing untyped env strings into typed config
+- Fail-fast configuration with aggregated errors: report every invalid or missing variable at once, not the first
+- Secret redaction so credentials never reach logs or error messages
+- Immutable config via `Object.freeze`
+- Provider abstraction behind a narrow interface with a deterministic mock for tests
+- Structured telemetry around the agent loop
+
+## What's implemented
+
+- `packages/agent-core`: framework-free agent loop, tool registry, session store, telemetry, and a mock provider
+- `packages/llm`: key-gated Vercel AI SDK provider with a mock fallback
+- `packages/config`: Zod-validated env/config loader shared across the workspace
 
 ## Getting started
 
