@@ -7,6 +7,7 @@ Most "AI agent" demos are a single API call in a script. This is the infrastruct
 - `packages/agent-core` — the framework-free agent loop, tools, and telemetry
 - `packages/llm` — the real LLM adapter over the Vercel AI SDK, key-gated with a mock fallback
 - `packages/config` — Zod-validated env loading shared across the workspace
+- `packages/rate-limiter` — token bucket, sliding-window log, and a concurrency semaphore for capping calls to a model provider
 - `apps/server` — a Hono service that streams the agent over SSE
 - `apps/console` — a Next.js chat UI
 
@@ -36,12 +37,17 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - Immutable config via `Object.freeze`
 - Provider abstraction behind a narrow interface with a deterministic mock for tests
 - Structured telemetry around the agent loop
+- Token-bucket rate limiting: continuous refill with a burst ceiling, and a monotonic-clock guard against backward time
+- Exact sliding-window log limiting, which avoids the 2x-at-the-boundary overshoot of a fixed-window counter
+- Concurrency control with a FIFO counting semaphore and direct permit handoff on release
+- Deterministic time in tests via an injectable clock instead of real timers
 
 ## What's implemented
 
 - `packages/agent-core`: framework-free agent loop, tool registry, session store, telemetry, and a mock provider
 - `packages/llm`: key-gated Vercel AI SDK provider with a mock fallback
 - `packages/config`: Zod-validated env/config loader shared across the workspace
+- `packages/rate-limiter`: token-bucket + sliding-window limiter and a concurrency semaphore, with refill, burst, and concurrency covered by tests
 
 ## Getting started
 
