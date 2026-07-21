@@ -8,6 +8,7 @@ Most "AI agent" demos are a single API call in a script. This is the infrastruct
 - `packages/llm` — the real LLM adapter over the Vercel AI SDK, key-gated with a mock fallback
 - `packages/config` — Zod-validated env loading shared across the workspace
 - `packages/rate-limiter` — token bucket, sliding-window log, and a concurrency semaphore for capping calls to a model provider
+- `packages/store-redis` — Redis-backed conversation store and distributed rate limiter behind one port, with an in-memory fallback
 - `apps/server` — a Hono service that streams the agent over SSE
 - `apps/console` — a Next.js chat UI
 
@@ -41,6 +42,12 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - Exact sliding-window log limiting, which avoids the 2x-at-the-boundary overshoot of a fixed-window counter
 - Concurrency control with a FIFO counting semaphore and direct permit handoff on release
 - Deterministic time in tests via an injectable clock instead of real timers
+- Port abstraction over a Redis client (a narrow command interface) so the store and limiter are testable and swappable without a running server
+- Atomic list appends for conversation history, avoiding the lost-update race of read-modify-write on a serialized blob
+- Atomic check-and-increment via a Lua script, so a rate-limit counter can never exist without its expiry
+- Distributed fixed-window rate limiting shared across nodes, with the memory-versus-exactness tradeoff against a sliding-window log
+- Boundary validation with Zod on data read back from an external store
+- Sliding TTL for idle-session expiry
 
 ## What's implemented
 
@@ -48,6 +55,7 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - `packages/llm`: key-gated Vercel AI SDK provider with a mock fallback
 - `packages/config`: Zod-validated env/config loader shared across the workspace
 - `packages/rate-limiter`: token-bucket + sliding-window limiter and a concurrency semaphore, with refill, burst, and concurrency covered by tests
+- `packages/store-redis`: Redis-backed conversation store (atomic list appends, Zod-validated reads, sliding TTL) and a distributed fixed-window rate limiter behind a `RedisPort`, with an in-memory fallback used in tests
 
 ## Getting started
 
