@@ -1,4 +1,8 @@
-## Why this exists
+# turbo-agent-kit
+
+A Turbo + pnpm monorepo for building LLM agents: agent loop, pluggable providers, rate limiting, Redis-backed session state, and an HTTP server that streams turns over SSE.
+
+## What this demonstrates
 
 Most "AI agent" demos are a single API call in a script. This is the infrastructure around that call: the agent loop, a tool registry, session state, streaming transport, and observability, each behind an interface so the pieces swap without a rewrite.
 
@@ -10,7 +14,7 @@ Most "AI agent" demos are a single API call in a script. This is the infrastruct
 - `packages/rate-limiter` — token bucket, sliding-window log, and a concurrency semaphore for capping calls to a model provider
 - `packages/store-redis` — Redis-backed conversation store and distributed rate limiter behind one port, with an in-memory fallback
 - `apps/server` — a Hono service that streams the agent over SSE
-- `apps/console` — a Next.js chat UI
+- `apps/console` — a Next.js chat UI (planned)
 
 ## Providers
 
@@ -25,6 +29,18 @@ import { runAgentTurn } from "@agent/core";
 const llm = createLLMProvider(); // mock with no key, real model with OPENAI_API_KEY
 await runAgentTurn(conversation, "book an appointment", llm, telemetry);
 ```
+
+## HTTP server
+
+`createApp` injects LLM, store, and rate limiter so tests use `app.request` with no live port. Entry wires `createLLMProvider` (mock without a key).
+
+```bash
+pnpm --filter @agent/server dev
+# GET  /healthz
+# POST /agent/turn  { "message": "...", "conversationId?": "..." }
+```
+
+A turn streams `meta` → `message*` → `done` as `text/event-stream`. Empty input is 400, unknown conversation ids are 404, and an empty token bucket is 429 with `Retry-After`. `/healthz` is not rate limited so probes never steal client tokens.
 
 ## Stack
 
@@ -48,6 +64,10 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - Distributed fixed-window rate limiting shared across nodes, with the memory-versus-exactness tradeoff against a sliding-window log
 - Boundary validation with Zod on data read back from an external store
 - Sliding TTL for idle-session expiry
+- Server-Sent Events (SSE) streaming of multi-step agent turns over HTTP
+- Dependency-injected app factory for testing HTTP handlers without a live port
+- Rate-limit middleware that fails closed and leaves health probes unmetered
+- Backpressure-safe SSE writes via a promise chain from a synchronous turn hook
 
 ## What's implemented
 
@@ -56,12 +76,16 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - `packages/config`: Zod-validated env/config loader shared across the workspace
 - `packages/rate-limiter`: token-bucket + sliding-window limiter and a concurrency semaphore, with refill, burst, and concurrency covered by tests
 - `packages/store-redis`: Redis-backed conversation store (atomic list appends, Zod-validated reads, sliding TTL) and a distributed fixed-window rate limiter behind a `RedisPort`, with an in-memory fallback used in tests
+- `apps/server` (Hono): `POST /agent/turn` SSE streaming, `GET /healthz`, rate-limit middleware returning 429
 
 ## Getting started
 
-      pnpm install
-      pnpm --filter @agent/core demo
+```bash
+pnpm install
+pnpm --filter @agent/core demo
+pnpm --filter @agent/server dev
+```
 
-Run the tests with `pnpm install && pnpm test`.
+Run the tests with `pnpm install && pnpm test`. Typecheck with `pnpm typecheck`.
 
 See each package's README for details.
