@@ -8,12 +8,29 @@ export interface TelemetryEvent {
   at: number;
 }
 
+export interface LatencySummary {
+  count: number;
+  p50: number;
+  p95: number;
+  p99: number;
+}
+
+// Nearest-rank percentile on a pre-sorted ascending array. Empty → 0 so callers
+// can render dashboards without special-casing "no samples yet".
+export function percentileOf(sortedMs: readonly number[], p: number): number {
+  if (sortedMs.length === 0) return 0;
+  if (p <= 0) return Math.round(sortedMs[0]!);
+  if (p >= 100) return Math.round(sortedMs[sortedMs.length - 1]!);
+  const rank = Math.ceil((p / 100) * sortedMs.length);
+  const idx = Math.min(sortedMs.length - 1, Math.max(0, rank - 1));
+  return Math.round(sortedMs[idx]!);
+}
+
 export class Telemetry {
   private events: TelemetryEvent[] = [];
   private listeners = new Set<() => void>();
 
   record(e: Omit<TelemetryEvent, "at">): void {
-    // Type is TelemetryEvent minus the "at" field so we can add it ourselves
     this.events.push({ ...e, at: Date.now() });
     this.listeners.forEach((l) => l());
   }
@@ -22,18 +39,29 @@ export class Telemetry {
     return this.events;
   }
 
+  percentile(p: number, type?: TelemetryEvent["type"]): number {
+    return percentileOf(this.sortedMs(type), p);
+  }
+
+  summary(type?: TelemetryEvent["type"]): LatencySummary {
+    const xs = this.sortedMs(type);
+    return {
+      count: xs.length,
+      p50: percentileOf(xs, 50),
+      p95: percentileOf(xs, 95),
+      p99: percentileOf(xs, 99),
+    };
+  }
+
   subscribe(fn: () => void): () => void {
     this.listeners.add(fn);
     return () => this.listeners.delete(fn);
   }
 
-  percentile(p: number, type?: TelemetryEvent["type"]): number {
-    const xs = this.events
+  private sortedMs(type?: TelemetryEvent["type"]): number[] {
+    return this.events
       .filter((e) => !type || e.type === type)
       .map((e) => e.ms)
       .sort((a, b) => a - b);
-    if (xs.length === 0) return 0;
-    const idx = Math.min(xs.length - 1, Math.ceil((p / 100) * xs.length) - 1);
-    return Math.round(xs[Math.max(0, idx)]!);
   }
 }

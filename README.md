@@ -1,6 +1,6 @@
 # turbo-agent-kit
 
-A Turbo + pnpm monorepo for building LLM agents: agent loop, pluggable providers, rate limiting, Redis-backed session state, and an HTTP server that streams turns over SSE.
+A Turbo + pnpm monorepo for building LLM agents: agent loop, pluggable providers, rate limiting, Redis-backed session state, and an HTTP server that streams turns over SSE with latency telemetry and structured logs.
 
 ## What this demonstrates
 
@@ -13,7 +13,7 @@ Most "AI agent" demos are a single API call in a script. This is the infrastruct
 - `packages/config` — Zod-validated env loading shared across the workspace
 - `packages/rate-limiter` — token bucket, sliding-window log, and a concurrency semaphore for capping calls to a model provider
 - `packages/store-redis` — Redis-backed conversation store and distributed rate limiter behind one port, with an in-memory fallback
-- `apps/server` — a Hono service that streams the agent over SSE
+- `apps/server` — a Hono service that streams the agent over SSE and exposes latency percentiles
 - `apps/console` — a Next.js chat UI (planned)
 
 ## Providers
@@ -32,15 +32,35 @@ await runAgentTurn(conversation, "book an appointment", llm, telemetry);
 
 ## HTTP server
 
-`createApp` injects LLM, store, and rate limiter so tests use `app.request` with no live port. Entry wires `createLLMProvider` (mock without a key).
+`createApp` injects LLM, store, rate limiter, telemetry, and logger so tests use `app.request` with no live port. Entry wires `createLLMProvider` (mock without a key) and a JSON logger.
 
 ```bash
 pnpm --filter @agent/server dev
 # GET  /healthz
+# GET  /telemetry
 # POST /agent/turn  { "message": "...", "conversationId?": "..." }
 ```
 
-A turn streams `meta` → `message*` → `done` as `text/event-stream`. Empty input is 400, unknown conversation ids are 404, and an empty token bucket is 429 with `Retry-After`. `/healthz` is not rate limited so probes never steal client tokens.
+A turn streams `meta` → `message*` → `done` as `text/event-stream`. Empty input is 400, unknown conversation ids are 404, and an empty token bucket is 429 with `Retry-After`. `/healthz` and `/telemetry` are not rate limited so probes and dashboards never steal client tokens.
+
+### Latency telemetry
+
+`GET /telemetry` returns nearest-rank p50/p95/p99 for LLM and tool spans recorded during turns:
+
+```json
+{
+  "events": 12,
+  "all": { "count": 12, "p50": 18, "p95": 90, "p99": 110 },
+  "llm": { "count": 10, "p50": 20, "p95": 95, "p99": 110 },
+  "tool": { "count": 2, "p50": 5, "p95": 12, "p99": 12 }
+}
+```
+
+Empty series return zeros so scrapers can poll before traffic arrives.
+
+### Structured logging
+
+Every request emits one JSON line to stdout (`ts`, `level`, `service`, `msg`, `requestId`, `method`, `path`, `status`, `durationMs`). Set `LOG_LEVEL=debug|info|warn|error` (default `info`). Clients may pass `X-Request-Id`; the server echoes it (or mints a UUID) so logs join with upstream traces.
 
 ## Stack
 
@@ -54,6 +74,9 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - Immutable config via `Object.freeze`
 - Provider abstraction behind a narrow interface with a deterministic mock for tests
 - Structured telemetry around the agent loop
+- Nearest-rank percentile latency aggregation (p50/p95/p99) over in-process timing samples
+- Structured JSON logging (one object per line) for container log collectors
+- Request correlation IDs propagated via `X-Request-Id` and joined into log fields
 - Token-bucket rate limiting: continuous refill with a burst ceiling, and a monotonic-clock guard against backward time
 - Exact sliding-window log limiting, which avoids the 2x-at-the-boundary overshoot of a fixed-window counter
 - Concurrency control with a FIFO counting semaphore and direct permit handoff on release
@@ -77,6 +100,7 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - `packages/rate-limiter`: token-bucket + sliding-window limiter and a concurrency semaphore, with refill, burst, and concurrency covered by tests
 - `packages/store-redis`: Redis-backed conversation store (atomic list appends, Zod-validated reads, sliding TTL) and a distributed fixed-window rate limiter behind a `RedisPort`, with an in-memory fallback used in tests
 - `apps/server` (Hono): `POST /agent/turn` SSE streaming, `GET /healthz`, rate-limit middleware returning 429
+- `apps/server`: `GET /telemetry` (p50/p95/p99) and structured JSON logging
 
 ## Getting started
 

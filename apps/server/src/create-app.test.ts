@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   InMemoryConversationStore,
+  Telemetry,
   type LLMProvider,
   type LLMResult,
   type Message,
@@ -8,6 +9,7 @@ import {
 } from "@agent/core";
 import { TokenBucket } from "@agent/rate-limiter";
 import { createApp } from "./create-app";
+import { createLogger } from "./logger";
 
 class FixedLLM implements LLMProvider {
   name = "fixed";
@@ -15,6 +17,10 @@ class FixedLLM implements LLMProvider {
   async complete(messages: Message[], _tools: ToolSpec[]): Promise<LLMResult> {
     return typeof this.reply === "function" ? this.reply(messages) : this.reply;
   }
+}
+
+function silentLogger() {
+  return createLogger({ write: () => {}, level: "error" });
 }
 
 function parseSSE(body: string): Array<{ event: string; data: string }> {
@@ -33,10 +39,12 @@ function parseSSE(body: string): Array<{ event: string; data: string }> {
   return events;
 }
 
-function appWith(limiter?: TokenBucket) {
+function appWith(limiter?: TokenBucket, extras: { telemetry?: Telemetry } = {}) {
   return createApp({
     llm: new FixedLLM({ kind: "final", content: "ok" }),
     limiter: limiter ?? new TokenBucket({ capacity: 20, refillPerSecond: 20 }),
+    logger: silentLogger(),
+    telemetry: extras.telemetry,
   });
 }
 
@@ -81,6 +89,7 @@ describe("apps/server", () => {
       store,
       llm: new FixedLLM({ kind: "final", content: "second" }),
       limiter: new TokenBucket({ capacity: 10, refillPerSecond: 10 }),
+      logger: silentLogger(),
     });
 
     const res = await postTurn(app, { message: "again", conversationId: existing.id });
@@ -132,9 +141,11 @@ describe("apps/server", () => {
         throw new Error("provider down");
       },
     };
+    const lines: string[] = [];
     const app = createApp({
       llm,
       limiter: new TokenBucket({ capacity: 5, refillPerSecond: 5 }),
+      logger: createLogger({ write: (line) => lines.push(line), level: "info" }),
     });
     const res = await postTurn(app, { message: "hello" });
     expect(res.status).toBe(200);
@@ -144,5 +155,92 @@ describe("apps/server", () => {
       error: "turn_failed",
       detail: "provider down",
     });
+    const turnFailed = lines
+      .map((l) => JSON.parse(l.trim()) as { msg: string; detail?: string })
+      .find((e) => e.msg === "turn_failed");
+    expect(turnFailed).toMatchObject({ detail: "provider down" });
+  });
+
+  it("GET /telemetry returns empty summaries before any turns", async () => {
+    const app = appWith();
+    const res = await app.request("/telemetry");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      events: 0,
+      all: { count: 0, p50: 0, p95: 0, p99: 0 },
+      llm: { count: 0, p50: 0, p95: 0, p99: 0 },
+      tool: { count: 0, p50: 0, p95: 0, p99: 0 },
+    });
+  });
+
+  it("GET /telemetry reflects p50/p95/p99 after turns and stays unmetered", async () => {
+    const telemetry = new Telemetry();
+    const limiter = new TokenBucket({ capacity: 1, refillPerSecond: 0.001, initialTokens: 0 });
+    const app = createApp({
+      llm: new FixedLLM({ kind: "final", content: "ok" }),
+      limiter,
+      telemetry,
+      logger: silentLogger(),
+    });
+
+    // Empty bucket: turns 429, telemetry still serves and does not spend tokens.
+    expect((await app.request("/telemetry")).status).toBe(200);
+    expect((await postTurn(app, { message: "hello" })).status).toBe(429);
+
+    // Seed known latencies so percentiles are deterministic (n=100 for clean ranks).
+    for (let ms = 1; ms <= 100; ms++) {
+      telemetry.record({ type: "llm", channel: "chat", ms, detail: "final" });
+    }
+    telemetry.record({ type: "tool", channel: "chat", ms: 5, detail: "checkAvailability" });
+
+    const body = (await (await app.request("/telemetry")).json()) as {
+      events: number;
+      llm: { count: number; p50: number; p95: number; p99: number };
+      tool: { count: number; p50: number; p95: number; p99: number };
+      all: { count: number };
+    };
+    expect(body.events).toBe(101);
+    expect(body.llm).toEqual({ count: 100, p50: 50, p95: 95, p99: 99 });
+    expect(body.tool).toEqual({ count: 1, p50: 5, p95: 5, p99: 5 });
+    expect(body.all.count).toBe(101);
+  });
+
+  it("echoes X-Request-Id and emits structured request logs", async () => {
+    const lines: string[] = [];
+    const app = createApp({
+      llm: new FixedLLM({ kind: "final", content: "ok" }),
+      limiter: new TokenBucket({ capacity: 10, refillPerSecond: 10 }),
+      logger: createLogger({ write: (line) => lines.push(line), level: "info" }),
+    });
+
+    const res = await app.request("/healthz", { headers: { "x-request-id": "req-abc" } });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("X-Request-Id")).toBe("req-abc");
+
+    const entry = JSON.parse(lines[0]!.trim()) as {
+      msg: string;
+      requestId: string;
+      method: string;
+      path: string;
+      status: number;
+      durationMs: number;
+      level: string;
+    };
+    expect(entry).toMatchObject({
+      msg: "request",
+      requestId: "req-abc",
+      method: "GET",
+      path: "/healthz",
+      status: 200,
+      level: "info",
+    });
+    expect(entry.durationMs).toBeGreaterThanOrEqual(0);
+
+    // Client 4xx logs as warn
+    lines.length = 0;
+    await postTurn(app, { message: "   " });
+    const warn = JSON.parse(lines[0]!.trim()) as { level: string; status: number };
+    expect(warn.level).toBe("warn");
+    expect(warn.status).toBe(400);
   });
 });
