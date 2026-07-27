@@ -1,12 +1,16 @@
 import { serve } from "@hono/node-server";
 import { createLLMProvider } from "@agent/llm";
 import { createApp } from "./create-app";
+import { createLogger, parseLogLevel } from "./logger";
 
 export { createApp } from "./create-app";
 export type { AppDeps } from "./create-app";
 export { rateLimitMiddleware } from "./rate-limit";
+export { createLogger, parseLogLevel } from "./logger";
+export type { Logger, LogLevel, LoggerOptions } from "./logger";
 
 const port = Number(process.env.PORT ?? 8787);
+const logger = createLogger({ level: parseLogLevel(process.env.LOG_LEVEL) });
 
 // Only start a listener when this file is the process entrypoint.
 const isMain =
@@ -14,8 +18,8 @@ const isMain =
   (process.argv[1].endsWith("/src/index.ts") || process.argv[1].endsWith("/dist/index.js"));
 
 if (isMain) {
-  const app = createApp({ llm: createLLMProvider() });
+  const app = createApp({ llm: createLLMProvider(), logger });
   serve({ fetch: app.fetch, port }, (info) => {
-    console.log(`@agent/server listening on http://localhost:${info.port}`);
+    logger.info("listening", { port: info.port });
   });
 }

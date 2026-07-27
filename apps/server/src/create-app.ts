@@ -11,7 +11,9 @@ import {
   type Message,
 } from "@agent/core";
 import { TokenBucket, type RateLimiter } from "@agent/rate-limiter";
+import { createLogger, type Logger } from "./logger";
 import { rateLimitMiddleware } from "./rate-limit";
+import { requestLogMiddleware } from "./request-log";
 
 const TurnBody = z.object({
   message: z.string().trim().min(1, "message must not be empty"),
@@ -24,17 +26,32 @@ export interface AppDeps {
   store?: ConversationStore;
   limiter?: RateLimiter;
   telemetry?: Telemetry;
+  logger?: Logger;
 }
+
+type AppVariables = { requestId: string };
 
 export function createApp(deps: AppDeps = {}) {
   const llm = deps.llm ?? new MockLLMProvider();
   const store = deps.store ?? new InMemoryConversationStore();
   const limiter = deps.limiter ?? new TokenBucket({ capacity: 30, refillPerSecond: 5 });
   const telemetry = deps.telemetry ?? new Telemetry();
+  const logger = deps.logger ?? createLogger();
 
-  const app = new Hono();
+  const app = new Hono<{ Variables: AppVariables }>();
+  app.use("*", requestLogMiddleware(logger));
 
   app.get("/healthz", (c) => c.json({ status: "ok" }));
+
+  // Observability is free of the client token budget, same as health probes.
+  app.get("/telemetry", (c) => {
+    return c.json({
+      events: telemetry.all().length,
+      all: telemetry.summary(),
+      llm: telemetry.summary("llm"),
+      tool: telemetry.summary("tool"),
+    });
+  });
 
   // Rate limit only the turn endpoint. Health checks must stay free so k8s
   // probes never compete with client traffic for tokens.
@@ -99,6 +116,11 @@ export function createApp(deps: AppDeps = {}) {
       } catch (err) {
         await writes;
         const detail = err instanceof Error ? err.message : "unknown error";
+        logger.error("turn_failed", {
+          conversationId: convo.id,
+          detail,
+          requestId: c.get("requestId"),
+        });
         await stream.writeSSE({
           event: "error",
           data: JSON.stringify({ error: "turn_failed", detail }),
