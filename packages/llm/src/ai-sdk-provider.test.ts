@@ -5,7 +5,17 @@ import { AiSdkLLMProvider } from "./ai-sdk-provider";
 import { createLLMProvider } from "./factory";
 
 const usage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
-const specs = [{ name: "checkAvailability", description: "check open slots" }];
+const specs = [
+  {
+    name: "checkAvailability",
+    description: "check open slots",
+    parameters: {
+      type: "object",
+      properties: { date: { type: "string" } },
+      required: ["date"],
+    },
+  },
+];
 
 function textModel(text: string) {
   return new MockLanguageModelV2({
