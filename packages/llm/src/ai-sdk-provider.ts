@@ -44,15 +44,20 @@ export class AiSdkLLMProvider implements LLMProvider {
   }
 }
 
-// ToolSpec carries no parameter schema, so accept any JSON object and let the tool validate.
-const anyObject = jsonSchema<Record<string, unknown>>({
-  type: "object",
-  additionalProperties: true,
-});
+// Prefer the Zod-derived JSON Schema from agent-core; fall back to any-object.
+function inputSchemaFor(spec: ToolSpec) {
+  const schema =
+    spec.parameters &&
+    typeof spec.parameters === "object" &&
+    Object.keys(spec.parameters).length > 0
+      ? spec.parameters
+      : { type: "object", additionalProperties: true };
+  return jsonSchema<Record<string, unknown>>(schema);
+}
 
 function toToolSet(specs: ToolSpec[]): ToolSet {
   const entries = specs.map(
-    (s) => [s.name, tool({ description: s.description, inputSchema: anyObject })] as const,
+    (s) => [s.name, tool({ description: s.description, inputSchema: inputSchemaFor(s) })] as const,
   );
   return Object.fromEntries(entries);
 }

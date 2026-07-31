@@ -30,6 +30,31 @@ const llm = createLLMProvider(); // mock with no key, real model with OPENAI_API
 await runAgentTurn(conversation, "book an appointment", llm, telemetry);
 ```
 
+## Tools
+
+`defineTool` binds a Zod schema to a handler and exposes JSON Schema `parameters` on the `ToolSpec` the model sees. At runtime the same schema `safeParse`s the model-supplied args. Invalid args become a tool message (`Invalid arguments for …`) so the loop continues and the model can recover. Handler throws become `Tool error: …`. Unknown tool names return a soft error the same way. A hard `MAX_STEPS` cap (default 5, overridable per turn) stops a provider that only ever returns tool calls.
+
+```ts
+import { defineTool, createToolRegistry, runAgentTurn } from "@agent/core";
+import { z } from "zod";
+
+const echo = defineTool({
+  name: "echo",
+  description: "Echo text back",
+  schema: z.object({ text: z.string().min(1) }),
+  async run({ text }) {
+    return text;
+  },
+});
+
+await runAgentTurn(conversation, "say hi", llm, telemetry, {
+  tools: createToolRegistry([echo]),
+  maxSteps: 3,
+});
+```
+
+Built-in tools: `bookAppointment`, `checkAvailability`, and a pure `calculate` tool (numbers + `+|-|*|/`, division by zero throws) used for deterministic tests.
+
 ## HTTP server
 
 `createApp` injects LLM, store, rate limiter, telemetry, and logger so tests use `app.request` with no live port. Entry wires `createLLMProvider` (mock without a key) and a JSON logger.
@@ -91,10 +116,15 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - Dependency-injected app factory for testing HTTP handlers without a live port
 - Rate-limit middleware that fails closed and leaves health probes unmetered
 - Backpressure-safe SSE writes via a promise chain from a synchronous turn hook
+- Schema-validated tool calling: Zod schemas as the source of truth, projected to JSON Schema for the LLM and re-checked at execution
+- Recoverable tool failures (validation, runtime throw, unknown name) as tool-role messages instead of aborting the turn
+- Bounded agent loop with a max-steps circuit breaker against infinite tool-call chains
+- Injectable tool registry and per-turn maxSteps for isolated unit tests
 
 ## What's implemented
 
 - `packages/agent-core`: framework-free agent loop, tool registry, session store, telemetry, and a mock provider
+- `packages/agent-core`: Zod-validated tools (`defineTool`, JSON Schema parameters, `calculate` + booking tools) with tool-error and max-steps paths covered in tests
 - `packages/llm`: key-gated Vercel AI SDK provider with a mock fallback
 - `packages/config`: Zod-validated env/config loader shared across the workspace
 - `packages/rate-limiter`: token-bucket + sliding-window limiter and a concurrency semaphore, with refill, burst, and concurrency covered by tests
