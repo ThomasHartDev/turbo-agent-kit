@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useReducer, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState, type FormEvent } from "react";
 import { fetchTelemetry, streamAgentTurn } from "@/lib/agent-client";
 import { canSubmit, chatReducer, initialChatState, isEmpty } from "@/lib/chat-state";
+import { createSubmitGuard } from "@/lib/submit-guard";
 import type { TelemetrySnapshot } from "@/lib/types";
 
 const emptySnap: TelemetrySnapshot = {
@@ -12,65 +13,121 @@ const emptySnap: TelemetrySnapshot = {
   tool: { count: 0, p50: 0, p95: 0, p99: 0 },
 };
 
+function isAbortError(err: unknown): boolean {
+  return (
+    (err instanceof DOMException && err.name === "AbortError") ||
+    (err instanceof Error && err.name === "AbortError")
+  );
+}
+
 export function ConsoleApp() {
   const [state, dispatch] = useReducer(chatReducer, initialChatState);
   const [busy, setBusy] = useState(false);
   const [snap, setSnap] = useState(emptySnap);
   const [telErr, setTelErr] = useState<string | null>(null);
   const [telLoading, setTelLoading] = useState(true);
+  const telLoadedRef = useRef(false);
+  const guardRef = useRef(createSubmitGuard());
+  const abortRef = useRef<AbortController | null>(null);
+  const stateRef = useRef(state);
+  stateRef.current = state;
 
-  const refreshTel = useCallback(async () => {
-    setTelLoading(true);
+  const refreshTel = useCallback(async (opts?: { showLoading?: boolean }) => {
+    const showLoading = opts?.showLoading ?? !telLoadedRef.current;
+    if (showLoading) setTelLoading(true);
     try {
       setSnap(await fetchTelemetry());
       setTelErr(null);
+      telLoadedRef.current = true;
     } catch (err) {
       setTelErr(err instanceof Error ? err.message : "telemetry fetch failed");
     } finally {
-      setTelLoading(false);
+      if (showLoading) setTelLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    void refreshTel();
-    const id = window.setInterval(() => void refreshTel(), 5000);
+    void refreshTel({ showLoading: true });
+    const id = window.setInterval(() => void refreshTel({ showLoading: false }), 5000);
     return () => window.clearInterval(id);
   }, [refreshTel]);
 
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+      abortRef.current = null;
+      guardRef.current.cancel();
+    };
+  }, []);
+
+  function cancelInFlight() {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    guardRef.current.cancel();
+    setBusy(false);
+  }
+
+  function onReset() {
+    cancelInFlight();
+    dispatch({ type: "reset" });
+  }
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
-    if (!canSubmit(state) || busy) return;
-    const message = state.draft.trim();
+    const current = stateRef.current;
+    if (!canSubmit(current)) return;
+    const turnId = guardRef.current.tryBegin();
+    if (turnId === null) return;
+
+    const message = current.draft.trim();
+    const conversationId = current.conversationId ?? undefined;
+    const ac = new AbortController();
+    abortRef.current = ac;
     dispatch({ type: "submit" });
     setBusy(true);
     let settled = false;
+
     try {
-      for await (const event of streamAgentTurn({
-        message,
-        conversationId: state.conversationId ?? undefined,
-      })) {
-        if (event.type === "meta") dispatch({ type: "meta", conversationId: event.conversationId });
-        else if (event.type === "message") dispatch({ type: "message", message: event.message });
-        else if (event.type === "done") {
+      for await (const event of streamAgentTurn(
+        { message, conversationId },
+        { signal: ac.signal },
+      )) {
+        if (!guardRef.current.isActive(turnId)) return;
+        if (event.type === "meta") {
+          dispatch({ type: "meta", conversationId: event.conversationId });
+        } else if (event.type === "message") {
+          dispatch({ type: "message", message: event.message });
+        } else if (event.type === "done") {
           settled = true;
           dispatch({ type: "done" });
-          void refreshTel();
+          void refreshTel({ showLoading: false });
         } else if (event.type === "error") {
           settled = true;
           dispatch({
             type: "fail",
             error: event.detail ? `${event.error}: ${event.detail}` : event.error,
+            restoreDraft: message,
           });
         } else {
           settled = true;
-          dispatch({ type: "fail", error: event.message });
+          dispatch({ type: "fail", error: event.message, restoreDraft: message });
         }
       }
-      if (!settled) dispatch({ type: "fail", error: "stream closed before done" });
+      if (!settled && guardRef.current.isActive(turnId)) {
+        dispatch({ type: "fail", error: "stream closed before done", restoreDraft: message });
+      }
     } catch (err) {
-      dispatch({ type: "fail", error: err instanceof Error ? err.message : "request failed" });
+      if (!guardRef.current.isActive(turnId) || isAbortError(err)) return;
+      dispatch({
+        type: "fail",
+        error: err instanceof Error ? err.message : "request failed",
+        restoreDraft: message,
+      });
     } finally {
-      setBusy(false);
+      if (abortRef.current === ac) abortRef.current = null;
+      guardRef.current.end(turnId);
+      // cancelInFlight bumps turnId; only the live turn clears busy
+      if (guardRef.current.isActive(turnId)) setBusy(false);
     }
   }
 
@@ -126,7 +183,7 @@ export function ConsoleApp() {
             }}
           />
           <div className="actions">
-            <button type="button" className="ghost" onClick={() => dispatch({ type: "reset" })}>
+            <button type="button" className="ghost" onClick={onReset}>
               Reset
             </button>
             <button type="submit" disabled={!canSubmit(state) || busy}>
@@ -141,7 +198,7 @@ export function ConsoleApp() {
           <button
             type="button"
             className="ghost"
-            onClick={() => void refreshTel()}
+            onClick={() => void refreshTel({ showLoading: true })}
             disabled={telLoading}
           >
             {telLoading ? "…" : "Refresh"}

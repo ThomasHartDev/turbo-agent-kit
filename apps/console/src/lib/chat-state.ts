@@ -16,7 +16,7 @@ export type ChatAction =
   | { type: "meta"; conversationId: string }
   | { type: "message"; message: ChatMessage }
   | { type: "done" }
-  | { type: "fail"; error: string }
+  | { type: "fail"; error: string; restoreDraft?: string }
   | { type: "reset" };
 
 export const initialChatState: ChatState = {
@@ -55,7 +55,12 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case "done":
       return { ...state, status: "idle", error: null };
     case "fail":
-      return { ...state, status: "error", error: action.error };
+      return {
+        ...state,
+        status: "error",
+        error: action.error,
+        draft: action.restoreDraft !== undefined ? action.restoreDraft : state.draft,
+      };
     case "reset":
       return { ...initialChatState };
     default: {

@@ -4,6 +4,7 @@ import type { AgentStreamEvent, ChatMessage, TelemetrySnapshot } from "./types";
 export interface AgentClientOptions {
   baseUrl?: string;
   fetch?: typeof fetch;
+  signal?: AbortSignal;
 }
 
 function url(base: string, path: string): string {
@@ -38,6 +39,7 @@ export async function* streamAgentTurn(
     method: "POST",
     headers: { "content-type": "application/json", accept: "text/event-stream" },
     body: JSON.stringify(body),
+    signal: options.signal,
   });
 
   if (!res.ok) {
@@ -55,7 +57,7 @@ export async function* streamAgentTurn(
       data = frame.data === "" ? null : JSON.parse(frame.data);
     } catch {
       yield { type: "error", error: "invalid_sse_json", detail: frame.data };
-      continue;
+      return;
     }
     const o = data as Record<string, unknown> | null;
     if (frame.event === "meta") {
@@ -74,12 +76,14 @@ export async function* streamAgentTurn(
       };
     } else if (frame.event === "done") {
       yield { type: "done", conversationId: String(o?.conversationId ?? "") };
+      return;
     } else if (frame.event === "error") {
       yield {
         type: "error",
         error: String(o?.error ?? "turn_failed"),
         detail: typeof o?.detail === "string" ? o.detail : undefined,
       };
+      return;
     }
   }
 }
@@ -89,6 +93,7 @@ export async function fetchTelemetry(options: AgentClientOptions = {}): Promise<
   const fetchImpl = options.fetch ?? fetch;
   const res = await fetchImpl(url(baseUrl, "/telemetry"), {
     headers: { accept: "application/json" },
+    signal: options.signal,
   });
   if (!res.ok) throw new Error(await errorMessage(res));
   return (await res.json()) as TelemetrySnapshot;

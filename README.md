@@ -109,7 +109,7 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 
 ## Console UI
 
-`apps/console` is a Next.js App Router client that talks to the Hono server through same-origin rewrites (`/api/agent/*` → `AGENT_URL`, default `http://localhost:8787`). Pure modules under `src/lib` own SSE framing, the chat reducer, and the agent client so they unit-test without a browser.
+`apps/console` is a Next.js App Router client that talks to the Hono server through same-origin rewrites for `/api/agent/turn`, `/api/agent/telemetry`, and `/api/agent/healthz` (`AGENT_URL`, default `http://localhost:8787`). Pure modules under `src/lib` own SSE framing, the chat reducer, and the agent client so they unit-test without a browser.
 
 ```bash
 pnpm --filter @agent/server dev   # :8787
