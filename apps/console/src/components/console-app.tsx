@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useReducer, useRef, useState, type FormEvent } from "react";
 import { fetchTelemetry, streamAgentTurn } from "@/lib/agent-client";
 import { canSubmit, chatReducer, initialChatState, isEmpty } from "@/lib/chat-state";
+import { failActionForStreamEvent } from "@/lib/stream-fail";
 import { createSubmitGuard } from "@/lib/submit-guard";
 import type { TelemetrySnapshot } from "@/lib/types";
 
@@ -86,6 +87,7 @@ export function ConsoleApp() {
     dispatch({ type: "submit" });
     setBusy(true);
     let settled = false;
+    let receivedMessage = false;
 
     try {
       for await (const event of streamAgentTurn(
@@ -96,32 +98,27 @@ export function ConsoleApp() {
         if (event.type === "meta") {
           dispatch({ type: "meta", conversationId: event.conversationId });
         } else if (event.type === "message") {
+          receivedMessage = true;
           dispatch({ type: "message", message: event.message });
         } else if (event.type === "done") {
           settled = true;
           dispatch({ type: "done" });
           void refreshTel({ showLoading: false });
-        } else if (event.type === "error") {
+        } else if (event.type === "error" || event.type === "http_error") {
           settled = true;
-          dispatch({
-            type: "fail",
-            error: event.detail ? `${event.error}: ${event.detail}` : event.error,
-            restoreDraft: message,
-          });
-        } else {
-          settled = true;
-          dispatch({ type: "fail", error: event.message, restoreDraft: message });
+          dispatch(failActionForStreamEvent(event, message, receivedMessage));
         }
       }
       if (!settled && guardRef.current.isActive(turnId)) {
-        dispatch({ type: "fail", error: "stream closed before done", restoreDraft: message });
+        dispatch(failActionForStreamEvent({ type: "stream_closed" }, message, receivedMessage));
       }
     } catch (err) {
       if (!guardRef.current.isActive(turnId) || isAbortError(err)) return;
+      // Network / throw before any frame: same as pure HTTP fail — restore draft.
       dispatch({
         type: "fail",
         error: err instanceof Error ? err.message : "request failed",
-        restoreDraft: message,
+        ...(receivedMessage ? {} : { restoreDraft: message }),
       });
     } finally {
       if (abortRef.current === ac) abortRef.current = null;

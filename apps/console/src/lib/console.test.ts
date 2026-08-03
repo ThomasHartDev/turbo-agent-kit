@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { fetchTelemetry, streamAgentTurn } from "./agent-client";
 import { canSubmit, chatReducer, initialChatState, isEmpty, type ChatState } from "./chat-state";
 import { createSseParser, iterateSseStream } from "./sse";
+import { failActionForStreamEvent } from "./stream-fail";
 import { createSubmitGuard } from "./submit-guard";
 
 const stateOf = (p: Partial<ChatState>): ChatState => ({ ...initialChatState, ...p });
@@ -85,6 +86,150 @@ describe("chatReducer", () => {
         type: "reset",
       }),
     ).toEqual(initialChatState);
+  });
+
+  it("fail with clearConversation drops conversationId and messages (404 path)", () => {
+    const text = "retry me";
+    let s = chatReducer(stateOf({ draft: "first" }), { type: "submit" });
+    s = chatReducer(s, { type: "meta", conversationId: "dead-id" });
+    s = chatReducer(s, {
+      type: "message",
+      message: { role: "user", content: "first" },
+    });
+    s = chatReducer(s, { type: "done" });
+    expect(s.conversationId).toBe("dead-id");
+    expect(s.messages).toHaveLength(1);
+
+    s = chatReducer({ ...s, draft: text }, { type: "submit" });
+    s = chatReducer(
+      s,
+      failActionForStreamEvent(
+        { type: "http_error", status: 404, message: "conversation_not_found" },
+        text,
+        false,
+      ),
+    );
+    expect(s).toMatchObject({
+      status: "error",
+      error: "conversation_not_found",
+      draft: text,
+      conversationId: null,
+    });
+    expect(s.messages).toEqual([]);
+    // next submit body must omit conversationId
+    expect(s.conversationId ?? undefined).toBeUndefined();
+    expect(canSubmit(s)).toBe(true);
+  });
+
+  it("fail 429/5xx keeps conversationId and messages", () => {
+    let s = chatReducer(
+      stateOf({
+        conversationId: "c1",
+        messages: [{ role: "user", content: "hi" }],
+        draft: "again",
+      }),
+      { type: "submit" },
+    );
+    s = chatReducer(
+      s,
+      failActionForStreamEvent(
+        { type: "http_error", status: 429, message: "Rate limited. Retry after 50ms." },
+        "again",
+        false,
+      ),
+    );
+    expect(s.conversationId).toBe("c1");
+    expect(s.messages).toHaveLength(1);
+    expect(s.draft).toBe("again");
+  });
+
+  it("mid-stream SSE error after message does not restore draft", () => {
+    const text = "book a flight";
+    let s = chatReducer(stateOf({ draft: text }), { type: "submit" });
+    s = chatReducer(s, { type: "meta", conversationId: "c1" });
+    s = chatReducer(s, {
+      type: "message",
+      message: { role: "user", content: text },
+    });
+    s = chatReducer(
+      s,
+      failActionForStreamEvent(
+        { type: "error", error: "turn_failed", detail: "llm down" },
+        text,
+        true,
+      ),
+    );
+    expect(s).toMatchObject({
+      status: "error",
+      error: "turn_failed: llm down",
+      draft: "",
+      conversationId: "c1",
+    });
+    expect(s.messages).toEqual([{ role: "user", content: text }]);
+  });
+
+  it("SSE error / stream-closed before any message restores draft", () => {
+    const text = "hello";
+    let s = chatReducer(stateOf({ draft: text }), { type: "submit" });
+    s = chatReducer(
+      s,
+      failActionForStreamEvent({ type: "error", error: "turn_failed" }, text, false),
+    );
+    expect(s.draft).toBe(text);
+
+    s = chatReducer(stateOf({ draft: text }), { type: "submit" });
+    s = chatReducer(s, failActionForStreamEvent({ type: "stream_closed" }, text, false));
+    expect(s).toMatchObject({ draft: text, error: "stream closed before done" });
+  });
+});
+
+describe("failActionForStreamEvent", () => {
+  it("clears conversation on 404 and conversation_not_found body", () => {
+    expect(
+      failActionForStreamEvent(
+        { type: "http_error", status: 404, message: "conversation_not_found" },
+        "x",
+        false,
+      ),
+    ).toEqual({
+      type: "fail",
+      error: "conversation_not_found",
+      restoreDraft: "x",
+      clearConversation: true,
+    });
+    expect(
+      failActionForStreamEvent(
+        { type: "http_error", status: 500, message: "conversation_not_found" },
+        "x",
+        false,
+      ).clearConversation,
+    ).toBe(true);
+    expect(
+      failActionForStreamEvent({ type: "http_error", status: 503, message: "upstream" }, "x", false)
+        .clearConversation,
+    ).toBeUndefined();
+  });
+
+  it("restores draft only when no message received this turn", () => {
+    expect(
+      failActionForStreamEvent(
+        { type: "error", error: "turn_failed", detail: "down" },
+        "hi",
+        false,
+      ),
+    ).toEqual({
+      type: "fail",
+      error: "turn_failed: down",
+      restoreDraft: "hi",
+    });
+    expect(
+      failActionForStreamEvent({ type: "error", error: "turn_failed", detail: "down" }, "hi", true),
+    ).toEqual({ type: "fail", error: "turn_failed: down" });
+    // http_error always restores (no user bubble yet)
+    expect(
+      failActionForStreamEvent({ type: "http_error", status: 429, message: "rate" }, "hi", true)
+        .restoreDraft,
+    ).toBe("hi");
   });
 });
 
@@ -201,6 +346,48 @@ describe("streamAgentTurn", () => {
     expect(
       (await collect({ message: "x" }, mockFetch(new Response(null, { status: 200 }))))[0],
     ).toMatchObject({ type: "http_error", message: "empty response body" });
+  });
+
+  it("404 conversation_not_found clears binding so next submit omits conversationId", async () => {
+    const events = await collect(
+      { message: "retry", conversationId: "dead-id" },
+      mockFetch(
+        new Response(
+          JSON.stringify({ error: "conversation_not_found", conversationId: "dead-id" }),
+          {
+            status: 404,
+          },
+        ),
+      ),
+    );
+    expect(events).toEqual([
+      { type: "http_error", status: 404, message: "conversation_not_found" },
+    ]);
+
+    let s = chatReducer(
+      stateOf({
+        conversationId: "dead-id",
+        messages: [{ role: "user", content: "earlier" }],
+        draft: "retry",
+      }),
+      { type: "submit" },
+    );
+    for (const event of events) {
+      if (event.type === "http_error" || event.type === "error") {
+        s = chatReducer(s, failActionForStreamEvent(event, "retry", false));
+      }
+    }
+    expect(s.conversationId).toBeNull();
+    expect(s.messages).toEqual([]);
+    expect(s.draft).toBe("retry");
+
+    // Mirror console-app request body construction for the next Send
+    const nextBody = {
+      message: s.draft.trim(),
+      conversationId: s.conversationId ?? undefined,
+    };
+    expect(nextBody.conversationId).toBeUndefined();
+    expect(JSON.stringify(nextBody)).not.toContain("dead-id");
   });
 
   it("stops after an SSE error frame (no trailing message)", async () => {
