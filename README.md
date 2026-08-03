@@ -1,10 +1,10 @@
 # turbo-agent-kit
 
-A Turbo + pnpm monorepo for building LLM agents: agent loop, pluggable providers, rate limiting, Redis-backed session state, and an HTTP server that streams turns over SSE with latency telemetry and structured logs.
+A Turbo + pnpm monorepo for building LLM agents: agent loop, pluggable providers, rate limiting, Redis-backed session state, an HTTP server that streams turns over SSE, and a Next.js console that consumes the stream with live latency telemetry.
 
 ## What this demonstrates
 
-Most "AI agent" demos are a single API call in a script. This is the infrastructure around that call: the agent loop, a tool registry, session state, streaming transport, and observability, each behind an interface so the pieces swap without a rewrite.
+Most "AI agent" demos are a single API call in a script. This is the infrastructure around that call: the agent loop, a tool registry, session state, streaming transport, a chat UI that parses POST-based SSE (EventSource is GET-only), and observability, each behind an interface so the pieces swap without a rewrite.
 
 ## Layout
 
@@ -14,7 +14,7 @@ Most "AI agent" demos are a single API call in a script. This is the infrastruct
 - `packages/rate-limiter` — token bucket, sliding-window log, and a concurrency semaphore for capping calls to a model provider
 - `packages/store-redis` — Redis-backed conversation store and distributed rate limiter behind one port, with an in-memory fallback
 - `apps/server` — a Hono service that streams the agent over SSE and exposes latency percentiles
-- `apps/console` — a Next.js chat UI (planned)
+- `apps/console` — Next.js chat UI over the SSE endpoint, with empty/loading/error states and a telemetry panel
 
 ## Providers
 
@@ -91,6 +91,10 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - Dependency-injected app factory for testing HTTP handlers without a live port
 - Rate-limit middleware that fails closed and leaves health probes unmetered
 - Backpressure-safe SSE writes via a promise chain from a synchronous turn hook
+- Incremental SSE client parsing over `fetch` + `ReadableStream` (POST streams; EventSource cannot)
+- Pure reducer UI state machine for empty, loading, streaming, and error
+- Same-origin reverse proxy via Next.js rewrites (BFF) so the browser never needs CORS for local console work
+- Live latency dashboard polling nearest-rank percentiles from the agent process
 
 ## What's implemented
 
@@ -101,6 +105,18 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - `packages/store-redis`: Redis-backed conversation store (atomic list appends, Zod-validated reads, sliding TTL) and a distributed fixed-window rate limiter behind a `RedisPort`, with an in-memory fallback used in tests
 - `apps/server` (Hono): `POST /agent/turn` SSE streaming, `GET /healthz`, rate-limit middleware returning 429
 - `apps/server`: `GET /telemetry` (p50/p95/p99) and structured JSON logging
+- `apps/console` (Next.js): chat UI over the SSE endpoint with loading/error/empty states + a telemetry panel
+
+## Console UI
+
+`apps/console` is a Next.js App Router client that talks to the Hono server through same-origin rewrites (`/api/agent/*` → `AGENT_URL`, default `http://localhost:8787`). Pure modules under `src/lib` own SSE framing, the chat reducer, and the agent client so they unit-test without a browser.
+
+```bash
+pnpm --filter @agent/server dev   # :8787
+pnpm --filter @agent/console dev  # :3001
+```
+
+Open `http://localhost:3001`. Empty state until the first turn; loading while the stream opens; messages append as `message` frames arrive; HTTP 4xx/5xx and SSE `error` frames surface in the error banner. The side panel polls `GET /telemetry` every 5s for p50/p95/p99.
 
 ## Getting started
 
@@ -108,6 +124,7 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 pnpm install
 pnpm --filter @agent/core demo
 pnpm --filter @agent/server dev
+pnpm --filter @agent/console dev
 ```
 
 Run the tests with `pnpm install && pnpm test`. Typecheck with `pnpm typecheck`.
