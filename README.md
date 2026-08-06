@@ -1,10 +1,10 @@
 # turbo-agent-kit
 
-A Turbo + pnpm monorepo for building LLM agents: agent loop, pluggable providers, rate limiting, Redis-backed session state, and an HTTP server that streams turns over SSE with latency telemetry and structured logs.
+A Turbo + pnpm monorepo for building LLM agents: agent loop, pluggable providers, rate limiting, Redis-backed session state, RAG retrieval (chunk + embed + vector search), and an HTTP server that streams turns over SSE with latency telemetry and structured logs.
 
 ## What this demonstrates
 
-Most "AI agent" demos are a single API call in a script. This is the infrastructure around that call: the agent loop, a tool registry, session state, streaming transport, and observability, each behind an interface so the pieces swap without a rewrite.
+Most "AI agent" demos are a single API call in a script. This is the infrastructure around that call: the agent loop, a tool registry, session state, retrieval-augmented grounding, streaming transport, and observability, each behind an interface so the pieces swap without a rewrite.
 
 ## Layout
 
@@ -13,6 +13,7 @@ Most "AI agent" demos are a single API call in a script. This is the infrastruct
 - `packages/config` — Zod-validated env loading shared across the workspace
 - `packages/rate-limiter` — token bucket, sliding-window log, and a concurrency semaphore for capping calls to a model provider
 - `packages/store-redis` — Redis-backed conversation store and distributed rate limiter behind one port, with an in-memory fallback
+- `packages/retrieval` — document chunking, pluggable embeddings, and cosine top-k vector search for RAG
 - `apps/server` — a Hono service that streams the agent over SSE and exposes latency percentiles
 - `apps/console` — a Next.js chat UI (planned)
 
@@ -29,31 +30,6 @@ import { runAgentTurn } from "@agent/core";
 const llm = createLLMProvider(); // mock with no key, real model with OPENAI_API_KEY
 await runAgentTurn(conversation, "book an appointment", llm, telemetry);
 ```
-
-## Tools
-
-`defineTool` binds a Zod schema to a handler and exposes JSON Schema `parameters` on the `ToolSpec` the model sees. At runtime the same schema `safeParse`s the model-supplied args. Invalid args become a tool message (`Invalid arguments for …`) so the loop continues and the model can recover. Handler throws become `Tool error: …`. Unknown tool names return a soft error the same way. A hard `MAX_STEPS` cap (default 5, overridable per turn) stops a provider that only ever returns tool calls.
-
-```ts
-import { defineTool, createToolRegistry, runAgentTurn } from "@agent/core";
-import { z } from "zod";
-
-const echo = defineTool({
-  name: "echo",
-  description: "Echo text back",
-  schema: z.object({ text: z.string().min(1) }),
-  async run({ text }) {
-    return text;
-  },
-});
-
-await runAgentTurn(conversation, "say hi", llm, telemetry, {
-  tools: createToolRegistry([echo]),
-  maxSteps: 3,
-});
-```
-
-Built-in tools: `bookAppointment`, `checkAvailability`, and a pure `calculate` tool (numbers + `+|-|*|/`, division by zero throws) used for deterministic tests.
 
 ## HTTP server
 
@@ -87,6 +63,22 @@ Empty series return zeros so scrapers can poll before traffic arrives.
 
 Every request emits one JSON line to stdout (`ts`, `level`, `service`, `msg`, `requestId`, `method`, `path`, `status`, `durationMs`). Set `LOG_LEVEL=debug|info|warn|error` (default `info`). Clients may pass `X-Request-Id`; the server echoes it (or mints a UUID) so logs join with upstream traces.
 
+## Retrieval (RAG)
+
+`packages/retrieval` chunks documents (recursive character split + overlap), embeds them through a pluggable `Embedder`, and ranks by cosine similarity. Default `HashingEmbedder` uses the hashing trick so CI needs no model server.
+
+```ts
+import { HashingEmbedder, Retriever, formatContext } from "@agent/retrieval";
+
+const retriever = new Retriever({
+  embedder: new HashingEmbedder({ dimensions: 256 }),
+  chunk: { size: 400, overlap: 60 },
+});
+await retriever.ingest([{ id: "runbook", text: "HPA watches CPU and scales replicas..." }]);
+const hits = await retriever.search("how does the autoscaler work?", { topK: 3 });
+const context = formatContext(hits); // inject into the system prompt
+```
+
 ## Stack
 
 Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, and OpenTelemetry.
@@ -116,19 +108,19 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - Dependency-injected app factory for testing HTTP handlers without a live port
 - Rate-limit middleware that fails closed and leaves health probes unmetered
 - Backpressure-safe SSE writes via a promise chain from a synchronous turn hook
-- Schema-validated tool calling: Zod schemas as the source of truth, projected to JSON Schema for the LLM and re-checked at execution
-- Recoverable tool failures (validation, runtime throw, unknown name) as tool-role messages instead of aborting the turn
-- Bounded agent loop with a max-steps circuit breaker against infinite tool-call chains
-- Injectable tool registry and per-turn maxSteps for isolated unit tests
+- Recursive character text splitting with overlap windows for context-preserving chunks
+- Dense vector embeddings via the hashing trick (feature hashing + L2 normalization)
+- Cosine-similarity nearest-neighbor search with top-k and min-score filtering
+- Retrieval-augmented generation (RAG) pipeline: ingest → chunk → embed → query → ground
 
 ## What's implemented
 
 - `packages/agent-core`: framework-free agent loop, tool registry, session store, telemetry, and a mock provider
-- `packages/agent-core`: Zod-validated tools (`defineTool`, JSON Schema parameters, `calculate` + booking tools) with tool-error and max-steps paths covered in tests
 - `packages/llm`: key-gated Vercel AI SDK provider with a mock fallback
 - `packages/config`: Zod-validated env/config loader shared across the workspace
 - `packages/rate-limiter`: token-bucket + sliding-window limiter and a concurrency semaphore, with refill, burst, and concurrency covered by tests
 - `packages/store-redis`: Redis-backed conversation store (atomic list appends, Zod-validated reads, sliding TTL) and a distributed fixed-window rate limiter behind a `RedisPort`, with an in-memory fallback used in tests
+- `packages/retrieval`: chunk + embed + vector search so the agent can ground answers (RAG)
 - `apps/server` (Hono): `POST /agent/turn` SSE streaming, `GET /healthz`, rate-limit middleware returning 429
 - `apps/server`: `GET /telemetry` (p50/p95/p99) and structured JSON logging
 
