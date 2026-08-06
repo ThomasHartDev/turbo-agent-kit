@@ -2,6 +2,11 @@ import { assertPositiveInt, type Chunk, type ChunkOptions, type Document } from 
 
 const DEFAULT_SEPARATORS = ["\n\n", "\n", ". ", " ", ""];
 
+interface SourceSpan {
+  start: number;
+  end: number;
+}
+
 export function chunkText(
   text: string,
   options: ChunkOptions,
@@ -22,7 +27,8 @@ export function chunkText(
     return slidingWindow(normalized, options.size, options.overlap);
   }
   return packWithOverlap(
-    splitRecursive(normalized, options.size, seps),
+    normalized,
+    splitRecursive(normalized, options.size, seps, 0),
     options.size,
     options.overlap,
   );
@@ -55,8 +61,14 @@ function slidingWindow(
   return out;
 }
 
-function splitRecursive(text: string, size: number, separators: string[]): string[] {
-  if (text.length <= size) return text.length === 0 ? [] : [text];
+function splitRecursive(
+  text: string,
+  size: number,
+  separators: string[],
+  offset: number,
+): SourceSpan[] {
+  if (text.length === 0) return [];
+  if (text.length <= size) return [{ start: offset, end: offset + text.length }];
 
   let separator = "";
   let next: string[] = [];
@@ -70,54 +82,74 @@ function splitRecursive(text: string, size: number, separators: string[]): strin
     }
   }
 
-  if (separator === "") return slidingWindow(text, size, 0).map((c) => c.text);
+  if (separator === "") {
+    const out: SourceSpan[] = [];
+    for (let i = 0; i < text.length; i += size) {
+      const end = Math.min(i + size, text.length);
+      out.push({ start: offset + i, end: offset + end });
+    }
+    return out;
+  }
 
-  const out: string[] = [];
-  for (const part of text.split(separator)) {
-    if (part.length === 0) continue;
-    if (part.length <= size) out.push(part);
-    else out.push(...splitRecursive(part, size, next));
+  const out: SourceSpan[] = [];
+  let cursor = 0;
+  while (true) {
+    const idx = text.indexOf(separator, cursor);
+    const partEnd = idx === -1 ? text.length : idx;
+    if (partEnd > cursor) {
+      const part = text.slice(cursor, partEnd);
+      if (part.length <= size) {
+        out.push({ start: offset + cursor, end: offset + partEnd });
+      } else {
+        out.push(...splitRecursive(part, size, next, offset + cursor));
+      }
+    }
+    if (idx === -1) break;
+    cursor = idx + separator.length;
   }
   return out;
 }
 
 function packWithOverlap(
-  splits: string[],
+  original: string,
+  pieces: SourceSpan[],
   size: number,
   overlap: number,
 ): Omit<Chunk, "id" | "documentId" | "metadata">[] {
   const chunks: Omit<Chunk, "id" | "documentId" | "metadata">[] = [];
-  let current: string[] = [];
-  let len = 0;
-  let offset = 0;
-  const total = (parts: string[]) => parts.reduce((n, p, i) => n + p.length + (i > 0 ? 1 : 0), 0);
+  let current: SourceSpan[] = [];
 
   const flush = () => {
     if (current.length === 0) return;
-    const text = current.join(" ");
-    chunks.push({ text, index: chunks.length, start: offset, end: offset + text.length });
-    offset += text.length;
+    const start = current[0]!.start;
+    const end = current[current.length - 1]!.end;
+    chunks.push({
+      text: original.slice(start, end),
+      index: chunks.length,
+      start,
+      end,
+    });
     if (overlap === 0) {
       current = [];
-      len = 0;
       return;
     }
-    while (current.length > 1 && total(current) > overlap) current.shift();
-    if (current.length === 1 && current[0]!.length > overlap) {
-      current = [current[0]!.slice(-overlap)];
+    const overlapStart = Math.max(start, end - overlap);
+    while (current.length > 0 && current[0]!.end <= overlapStart) {
+      current.shift();
     }
-    len = total(current);
+    if (current.length > 0 && current[0]!.start < overlapStart) {
+      current[0] = { start: overlapStart, end: current[0]!.end };
+    }
   };
 
-  for (const split of splits) {
-    const add = split.length + (current.length > 0 ? 1 : 0);
-    if (len + add > size && current.length > 0) flush();
-    if (len + split.length + (current.length > 0 ? 1 : 0) > size) {
-      current = [];
-      len = 0;
+  for (const piece of pieces) {
+    if (current.length > 0 && piece.end - current[0]!.start > size) {
+      flush();
     }
-    current.push(split);
-    len = total(current);
+    if (current.length > 0 && piece.end - current[0]!.start > size) {
+      current = [];
+    }
+    current.push(piece);
   }
   flush();
   return chunks;

@@ -6,21 +6,68 @@ import type { EmbeddedChunk } from "./types";
 import { InMemoryVectorStore } from "./vector-store";
 
 describe("chunkText", () => {
-  it("handles empty, single, recursive, and hard splits", () => {
+  it("returns empty for blank input and one chunk for short text", () => {
     expect(chunkText("", { size: 50, overlap: 10 })).toEqual([]);
+    expect(chunkText("   \n  ", { size: 50, overlap: 10 })).toEqual([]);
     expect(chunkText("hello world", { size: 50, overlap: 5 })).toHaveLength(1);
+  });
 
+  it("rejects invalid overlap", () => {
+    expect(() => chunkText("hi", { size: 10, overlap: 10 })).toThrow(RangeError);
+    expect(() => chunkText("hi", { size: 10, overlap: -1 })).toThrow(RangeError);
+  });
+
+  it("default separators + long unbreakable run: size cap, no injected spaces", () => {
+    const size = 20;
+    const overlap = 5;
+    const original = "x".repeat(45);
+    const chunks = chunkText(original, { size, overlap });
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const c of chunks) {
+      expect(c.text.length).toBeLessThanOrEqual(size);
+      expect(c.text.includes(" ")).toBe(false);
+      expect(c.text).toBe("x".repeat(c.text.length));
+      expect(original.slice(c.start, c.end)).toBe(c.text);
+    }
+  });
+
+  it("maps start/end into source for multi-paragraph multi-word docs", () => {
     const a = "Alpha paragraph about cats and dogs. ".repeat(8).trim();
     const b = "Beta paragraph about birds and fish. ".repeat(8).trim();
-    expect(chunkText(`${a}\n\n${b}`, { size: 200, overlap: 20 }).length).toBeGreaterThan(1);
+    const original = `${a}\n\n${b}`;
+    const chunks = chunkText(original, { size: 200, overlap: 20 });
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const c of chunks) {
+      expect(original.slice(c.start, c.end)).toBe(c.text);
+      expect(c.text.length).toBeLessThanOrEqual(200);
+    }
+  });
 
-    const hard = chunkText("x".repeat(50), { size: 20, overlap: 5, separators: [""] });
+  it("sliding window with separators:[''] keeps source ranges", () => {
+    const original = "x".repeat(50);
+    const hard = chunkText(original, { size: 20, overlap: 5, separators: [""] });
     expect(hard.every((c) => c.text.length <= 20)).toBe(true);
+    expect(hard[0]).toMatchObject({ start: 0, end: 20, text: "x".repeat(20) });
+    expect(hard[1]).toMatchObject({ start: 15, end: 35 });
+    for (const c of hard) {
+      expect(original.slice(c.start, c.end)).toBe(c.text);
+    }
+  });
 
-    expect(() => chunkText("hi", { size: 10, overlap: 10 })).toThrow(RangeError);
+  it("chunkDocument assigns ids and maps offsets after CRLF normalize", () => {
     const words = Array.from({ length: 30 }, (_, i) => `word${i}`).join(" ");
     const docs = chunkDocument({ id: "d1", text: words }, { size: 40, overlap: 8 });
     expect(docs[0]).toMatchObject({ documentId: "d1", id: "d1#0" });
+    for (const c of docs) {
+      expect(words.slice(c.start, c.end)).toBe(c.text);
+    }
+
+    const crlf = "line one\r\n\r\nline two has several words here";
+    const normalized = crlf.replace(/\r\n/g, "\n");
+    const pieces = chunkText(crlf, { size: 20, overlap: 4 });
+    for (const c of pieces) {
+      expect(normalized.slice(c.start, c.end)).toBe(c.text);
+    }
   });
 });
 
