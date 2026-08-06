@@ -28,7 +28,7 @@ export function chunkText(
   }
   return packWithOverlap(
     normalized,
-    splitRecursive(normalized, options.size, seps, 0),
+    splitRecursive(normalized, options.size, options.overlap, seps, 0),
     options.size,
     options.overlap,
   );
@@ -64,6 +64,7 @@ function slidingWindow(
 function splitRecursive(
   text: string,
   size: number,
+  overlap: number,
   separators: string[],
   offset: number,
 ): SourceSpan[] {
@@ -83,10 +84,12 @@ function splitRecursive(
   }
 
   if (separator === "") {
+    const step = Math.max(1, size - overlap);
     const out: SourceSpan[] = [];
-    for (let i = 0; i < text.length; i += size) {
+    for (let i = 0; i < text.length; i += step) {
       const end = Math.min(i + size, text.length);
       out.push({ start: offset + i, end: offset + end });
+      if (end === text.length) break;
     }
     return out;
   }
@@ -101,7 +104,7 @@ function splitRecursive(
       if (part.length <= size) {
         out.push({ start: offset + cursor, end: offset + partEnd });
       } else {
-        out.push(...splitRecursive(part, size, next, offset + cursor));
+        out.push(...splitRecursive(part, size, overlap, next, offset + cursor));
       }
     }
     if (idx === -1) break;
@@ -116,41 +119,43 @@ function packWithOverlap(
   size: number,
   overlap: number,
 ): Omit<Chunk, "id" | "documentId" | "metadata">[] {
-  const chunks: Omit<Chunk, "id" | "documentId" | "metadata">[] = [];
-  let current: SourceSpan[] = [];
+  if (pieces.length === 0) return [];
 
-  const flush = () => {
-    if (current.length === 0) return;
-    const start = current[0]!.start;
-    const end = current[current.length - 1]!.end;
+  const contentEnd = pieces[pieces.length - 1]!.end;
+  const pieceStarts = new Set(pieces.map((p) => p.start));
+  const chunks: Omit<Chunk, "id" | "documentId" | "metadata">[] = [];
+  let pos = pieces[0]!.start;
+
+  while (pos < contentEnd) {
+    const hardEnd = Math.min(pos + size, contentEnd);
+    let end = pos;
+
+    for (const p of pieces) {
+      if (p.end <= pos) continue;
+      if (p.end <= hardEnd && p.end - pos <= size) {
+        end = p.end;
+      } else {
+        break;
+      }
+    }
+
+    // WHY: overlap carry starts mid-span; soft piece ends would drop shared chars.
+    if (end === pos || (end < hardEnd && !pieceStarts.has(pos))) {
+      end = hardEnd;
+    }
+
     chunks.push({
-      text: original.slice(start, end),
+      text: original.slice(pos, end),
       index: chunks.length,
-      start,
+      start: pos,
       end,
     });
-    if (overlap === 0) {
-      current = [];
-      return;
-    }
-    const overlapStart = Math.max(start, end - overlap);
-    while (current.length > 0 && current[0]!.end <= overlapStart) {
-      current.shift();
-    }
-    if (current.length > 0 && current[0]!.start < overlapStart) {
-      current[0] = { start: overlapStart, end: current[0]!.end };
-    }
-  };
 
-  for (const piece of pieces) {
-    if (current.length > 0 && piece.end - current[0]!.start > size) {
-      flush();
-    }
-    if (current.length > 0 && piece.end - current[0]!.start > size) {
-      current = [];
-    }
-    current.push(piece);
+    if (end >= contentEnd) break;
+
+    const next = overlap > 0 ? Math.max(pos, end - overlap) : end;
+    pos = next <= pos ? end : next;
   }
-  flush();
+
   return chunks;
 }

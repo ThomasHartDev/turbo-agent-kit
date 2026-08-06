@@ -17,18 +17,56 @@ describe("chunkText", () => {
     expect(() => chunkText("hi", { size: 10, overlap: -1 })).toThrow(RangeError);
   });
 
-  it("default separators + long unbreakable run: size cap, no injected spaces", () => {
+  it("default separators + long unbreakable run: size cap, overlap, no injected spaces", () => {
     const size = 20;
     const overlap = 5;
-    const original = "x".repeat(45);
+    const original = "x".repeat(100);
     const chunks = chunkText(original, { size, overlap });
+    const sliding = chunkText(original, { size, overlap, separators: [""] });
     expect(chunks.length).toBeGreaterThan(1);
+    expect(chunks.map((c) => [c.start, c.end])).toEqual(sliding.map((c) => [c.start, c.end]));
     for (const c of chunks) {
       expect(c.text.length).toBeLessThanOrEqual(size);
       expect(c.text.includes(" ")).toBe(false);
       expect(c.text).toBe("x".repeat(c.text.length));
       expect(original.slice(c.start, c.end)).toBe(c.text);
     }
+    for (let i = 1; i < chunks.length; i++) {
+      const prev = chunks[i - 1]!;
+      const cur = chunks[i]!;
+      if (prev.text.length === size && cur.text.length === size) {
+        expect(cur.start).toBe(prev.end - overlap);
+      }
+      const shared = Math.min(overlap, prev.text.length, cur.text.length);
+      if (shared > 0 && cur.start < prev.end) {
+        const suffix = prev.text.slice(-shared);
+        const prefix = cur.text.slice(0, shared);
+        expect(prefix).toBe(suffix);
+        expect(cur.start).toBe(prev.end - shared);
+      }
+    }
+  });
+
+  it("size-length tokens separated by spaces keep configured overlap", () => {
+    const size = 20;
+    const overlap = 5;
+    const token = "a".repeat(size);
+    const original = Array.from({ length: 5 }, () => token).join(" ");
+    const chunks = chunkText(original, { size, overlap });
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const c of chunks) {
+      expect(c.text.length).toBeLessThanOrEqual(size);
+      expect(original.slice(c.start, c.end)).toBe(c.text);
+    }
+    for (let i = 1; i < chunks.length; i++) {
+      const prev = chunks[i - 1]!;
+      const cur = chunks[i]!;
+      if (prev.text.length === size && cur.text.length === size) {
+        expect(cur.start).toBe(prev.end - overlap);
+        expect(cur.text.slice(0, overlap)).toBe(prev.text.slice(-overlap));
+      }
+    }
+    expect(chunks.some((c) => c.start > 0 && c.start < size)).toBe(true);
   });
 
   it("maps start/end into source for multi-paragraph multi-word docs", () => {
