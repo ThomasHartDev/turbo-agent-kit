@@ -69,6 +69,42 @@ describe("chunkText", () => {
     expect(chunks.some((c) => c.start > 0 && c.start < size)).toBe(true);
   });
 
+  it("short soft lead-in before long unbreakable token keeps overlap", () => {
+    const cases: { original: string; size: number; overlap: number }[] = [
+      {
+        original: "See docs at https://" + "a".repeat(80) + ".example.com/path",
+        size: 100,
+        overlap: 20,
+      },
+      {
+        original: "Hi " + "x".repeat(500),
+        size: 400,
+        overlap: 60,
+      },
+    ];
+
+    for (const { original, size, overlap } of cases) {
+      const chunks = chunkText(original, { size, overlap });
+      expect(chunks.length).toBeGreaterThan(1);
+      expect(chunks[0]!.text.length).toBeLessThanOrEqual(overlap);
+
+      for (const c of chunks) {
+        expect(c.text.length).toBeLessThanOrEqual(size);
+        expect(original.slice(c.start, c.end)).toBe(c.text);
+      }
+
+      for (let i = 1; i < chunks.length; i++) {
+        const prev = chunks[i - 1]!;
+        const cur = chunks[i]!;
+        expect(cur.start).toBeLessThan(prev.end);
+        const shared = prev.end - cur.start;
+        const expected = Math.min(overlap, prev.text.length - 1);
+        expect(shared).toBe(expected);
+        expect(cur.text.slice(0, shared)).toBe(prev.text.slice(-shared));
+      }
+    }
+  });
+
   it("maps start/end into source for multi-paragraph multi-word docs", () => {
     const a = "Alpha paragraph about cats and dogs. ".repeat(8).trim();
     const b = "Beta paragraph about birds and fish. ".repeat(8).trim();

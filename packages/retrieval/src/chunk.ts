@@ -153,8 +153,8 @@ function packWithOverlap(
 
     if (end >= contentEnd) break;
 
-    const next = overlap > 0 ? Math.max(pos, end - overlap) : end;
-    pos = next <= pos ? end : next;
+    // WHY: short soft chunks (len <= overlap) must still share chars; only force +1 progress.
+    pos = overlap > 0 ? Math.min(end, Math.max(pos + 1, end - overlap)) : end;
   }
 
   return chunks;
