@@ -1,5 +1,6 @@
 import { serve } from "@hono/node-server";
 import { createLLMProvider } from "@agent/llm";
+import { initTracing } from "@agent/telemetry";
 import { createApp } from "./create-app";
 import { createLogger, parseLogLevel } from "./logger";
 
@@ -18,6 +19,11 @@ const isMain =
   (process.argv[1].endsWith("/src/index.ts") || process.argv[1].endsWith("/dist/index.js"));
 
 if (isMain) {
+  const tracing = initTracing({ serviceName: process.env.OTEL_SERVICE_NAME ?? "agent-server" });
+  logger.info("tracing_init", {
+    otlpEnabled: tracing.otlpEnabled,
+    serviceName: tracing.serviceName,
+  });
   const app = createApp({ llm: createLLMProvider(), logger });
   serve({ fetch: app.fetch, port }, (info) => {
     logger.info("listening", { port: info.port });
