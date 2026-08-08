@@ -81,9 +81,14 @@ describe("server → llm → tool span hierarchy", () => {
 
     const spans = exporter.getFinishedSpans();
     const turn = byName(spans, "agent.turn")[0]!;
+    expect(turn).toBeDefined();
     const children = childOf(spans, turn);
+    expect(children.length).toBeGreaterThanOrEqual(1);
     expect(children.every((s) => s.name === "agent.llm")).toBe(true);
     expect(byName(spans, "agent.tool")).toHaveLength(0);
+    expect(children.every((s) => s.spanContext().traceId === turn.spanContext().traceId)).toBe(
+      true,
+    );
   });
 
   it("marks error status on failed turns and clamps bad durations", async () => {

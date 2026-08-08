@@ -1,4 +1,4 @@
-import { trace } from "@opentelemetry/api";
+import { context, trace } from "@opentelemetry/api";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { resourceFromAttributes } from "@opentelemetry/resources";
 import {
@@ -83,6 +83,9 @@ export function initTracing(options: TracingOptions = {}): TracingHandle {
     serviceName,
     shutdown: async () => {
       await provider.shutdown();
+      // register() sets globals; without disable(), a later register() is a no-op
+      trace.disable();
+      context.disable();
       active = null;
     },
   };
@@ -102,6 +105,11 @@ export function otlpEnabled(): boolean {
 }
 
 export async function resetTracingForTests(): Promise<void> {
-  if (active) await active.shutdown();
+  if (active) {
+    await active.shutdown();
+  } else {
+    trace.disable();
+    context.disable();
+  }
   active = null;
 }
