@@ -15,7 +15,7 @@ describe("percentileOf", () => {
   });
 
   it("uses nearest-rank on a sorted series", () => {
-    // 1..100 → p50=50, p95=95, p99=99 (ceil rank)
+
     const xs = Array.from({ length: 100 }, (_, i) => i + 1);
     expect(percentileOf(xs, 50)).toBe(50);
     expect(percentileOf(xs, 95)).toBe(95);
@@ -38,7 +38,7 @@ describe("percentileOf", () => {
 describe("Telemetry", () => {
   function seed(): Telemetry {
     const t = new Telemetry();
-    // llm: 10, 20, 30, 40, 50  tool: 5, 15
+
     for (const ms of [10, 20, 30, 40, 50]) {
       t.record({ type: "llm", channel: "chat", ms, detail: "final" });
     }

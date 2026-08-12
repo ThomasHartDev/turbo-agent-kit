@@ -110,7 +110,7 @@ describe("loadConfig", () => {
     };
     const ok = loadConfig(shaped, { source: { START: "1", END: "9" } });
     expect(ok.values).toEqual({ START: 1, END: 9 });
-    // sanity: the helpers really are zod schemas that can be extended
+
     const schema = z.object(shaped).refine((c) => c.END > c.START, "END must exceed START");
     expect(schema.safeParse({ START: "5", END: "2" }).success).toBe(false);
   });

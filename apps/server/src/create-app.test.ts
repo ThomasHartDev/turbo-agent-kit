@@ -183,11 +183,9 @@ describe("apps/server", () => {
       logger: silentLogger(),
     });
 
-    // Empty bucket: turns 429, telemetry still serves and does not spend tokens.
     expect((await app.request("/telemetry")).status).toBe(200);
     expect((await postTurn(app, { message: "hello" })).status).toBe(429);
 
-    // Seed known latencies so percentiles are deterministic (n=100 for clean ranks).
     for (let ms = 1; ms <= 100; ms++) {
       telemetry.record({ type: "llm", channel: "chat", ms, detail: "final" });
     }
@@ -236,7 +234,6 @@ describe("apps/server", () => {
     });
     expect(entry.durationMs).toBeGreaterThanOrEqual(0);
 
-    // Client 4xx logs as warn
     lines.length = 0;
     await postTurn(app, { message: "   " });
     const warn = JSON.parse(lines[0]!.trim()) as { level: string; status: number };

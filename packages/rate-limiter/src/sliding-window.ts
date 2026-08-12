@@ -12,9 +12,6 @@ export interface SlidingWindowOptions {
   clock?: Clock;
 }
 
-// Exact sliding-window log: keeps a timestamp per admitted unit and prunes on
-// read. Precise at the window edge, unlike a fixed-window counter that lets 2x
-// the limit through across a boundary. Memory is O(limit) per key.
 export class SlidingWindowLog implements RateLimiter {
   private readonly limit: number;
   private readonly windowMs: number;
@@ -47,8 +44,6 @@ export class SlidingWindowLog implements RateLimiter {
       return { ok: true, remaining: this.limit - this.hits.length, retryAfterMs: 0 };
     }
 
-    // Slots free as old hits age out. To admit `cost` we need `need` of the
-    // oldest hits to leave the window; the newest of those expires last.
     const need = this.hits.length + cost - this.limit;
     const freesAt = this.hits[need - 1] + this.windowMs;
     return { ok: false, remaining: 0, retryAfterMs: freesAt - now };

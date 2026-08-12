@@ -27,7 +27,7 @@ export interface AsyncConversationStore {
 
 export interface RedisConversationStoreOptions {
   keyPrefix?: string;
-  ttlSeconds?: number; // slides forward on every append so idle conversations expire
+  ttlSeconds?: number;
 }
 
 export class ConversationNotFoundError extends Error {
@@ -37,8 +37,6 @@ export class ConversationNotFoundError extends Error {
   }
 }
 
-// Metadata lives in a string key and messages in a Redis list, so an append is a
-// single atomic RPUSH with no read-modify-write race between concurrent writers.
 export class RedisConversationStore implements AsyncConversationStore {
   private readonly prefix: string;
   private readonly ttlSeconds?: number;

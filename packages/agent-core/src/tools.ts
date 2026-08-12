@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { sleep } from "./utils";
 
-// These types not shared so keep them local
 export interface ToolSpec {
   name: string;
   description: string;
@@ -30,7 +29,7 @@ const bookAppointment = defineTool({
   schema: z.object({ service: z.string(), time: z.string() }),
   async run({ service, time }) {
     await sleep(120);
-    const conf = Math.floor(Math.random() * 9000 + 1000); // Fake demo data for now
+    const conf = Math.floor(Math.random() * 9000 + 1000);
     return `Booked ${service} for ${time}. Confirmation #${conf}`;
   },
 });
@@ -46,7 +45,7 @@ const checkAvailability = defineTool({
 });
 
 export const toolRegistry = new Map<string, Tool>(
-  [bookAppointment, checkAvailability].map((t): [string, Tool] => [t.name, t]), // O(1) lookups by name
+  [bookAppointment, checkAvailability].map((t): [string, Tool] => [t.name, t]),
 );
 
 export const toolSpecs: ToolSpec[] = [...toolRegistry.values()].map((t) => ({

@@ -10,8 +10,7 @@ export interface LLMConfig {
 
 const DEFAULT_MODEL = "gpt-4o-mini";
 
-// Key-gated: a real key wires up the AI SDK, otherwise fall back to the mock so
-// tests and local dev run without credentials.
+// key-gated: real key → AI SDK, else mock so tests run without credentials
 export function createLLMProvider(config: LLMConfig = {}): LLMProvider {
   const apiKey = config.apiKey ?? process.env.OPENAI_API_KEY;
   if (!apiKey) return new MockLLMProvider();

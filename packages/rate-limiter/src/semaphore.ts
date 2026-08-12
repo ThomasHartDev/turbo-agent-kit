@@ -1,8 +1,5 @@
 import { assertPositiveInt } from "./types";
 
-// Counting semaphore for in-flight concurrency (e.g. capping simultaneous LLM
-// calls). Waiters are FIFO and permits hand off directly to the next waiter on
-// release, so a released permit is never briefly visible as "available".
 export class Semaphore {
   private readonly permits: number;
   private free: number;

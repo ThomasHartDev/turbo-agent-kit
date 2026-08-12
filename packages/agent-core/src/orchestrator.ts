@@ -6,7 +6,7 @@ import type { Telemetry } from "./telemetry";
 const MAX_STEPS = 5;
 
 export interface TurnHooks {
-  // let's the caller watch messages as they're produced mid-turn
+
   onMessage?: (m: Message) => void;
 }
 

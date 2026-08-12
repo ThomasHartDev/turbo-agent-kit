@@ -57,8 +57,6 @@ export function loadConfig<Shape extends z.ZodRawShape>(
   };
 }
 
-// The root key drives both secret redaction and the "what did you actually set"
-// lookup. Env is flat, so path[0] is always the offending variable name.
 function toIssues(error: z.ZodError, source: Source, secrets: Set<string>): ConfigIssue[] {
   return error.issues.map((issue) => {
     const key = String(issue.path[0] ?? "");

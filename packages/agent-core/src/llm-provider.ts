@@ -24,7 +24,7 @@ export class MockLLMProvider implements LLMProvider {
     const lastUser = messages[lastUserIdx]?.content.toLowerCase() ?? "";
 
     if (lastUser.includes("book") || lastUser.includes("appointment")) {
-      // Real model reads the whole message and decides intent from meaning. These hard coded strings are stand ins
+
       return {
         kind: "tool",
         toolCall: {

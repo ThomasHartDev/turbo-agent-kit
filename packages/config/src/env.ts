@@ -1,9 +1,5 @@
 import { z } from "zod";
 
-// Env values arrive as strings, so every coercion below starts from a string and
-// narrows into the real type. Kept explicit rather than leaning on z.coerce so the
-// accepted spellings (and the rejections) are visible and testable.
-
 const TRUTHY = new Set(["1", "true", "yes", "on"]);
 const FALSY = new Set(["0", "false", "no", "off"]);
 

@@ -50,7 +50,6 @@ describe("Semaphore", () => {
       }),
     );
 
-    // Let the scheduler admit the first wave, then release gates one at a time.
     await Promise.resolve();
     for (const gate of gates) {
       gate.resolve();

@@ -20,9 +20,6 @@ export interface StoreConfig extends RedisConversationStoreOptions {
   redis?: RedisPort;
 }
 
-// Same key-gated fallback pattern as `createLLMProvider`: hand back a Redis-backed
-// store when a client is supplied, otherwise an in-process one that runs the exact
-// same code path over an in-memory port. CI and tests need no running Redis.
 export function createConversationStore(config: StoreConfig = {}): AsyncConversationStore {
   const { redis, ...options } = config;
   return new RedisConversationStore(redis ?? new InMemoryRedis(), options);

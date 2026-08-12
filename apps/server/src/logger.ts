@@ -18,7 +18,7 @@ export interface Logger {
 export interface LoggerOptions {
   service?: string;
   level?: LogLevel;
-  /** Capture sink for tests; defaults to process.stdout.write. */
+
   write?: (line: string) => void;
   clock?: () => number;
   base?: Record<string, unknown>;

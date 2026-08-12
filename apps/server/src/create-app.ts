@@ -53,8 +53,7 @@ export function createApp(deps: AppDeps = {}) {
     });
   });
 
-  // Rate limit only the turn endpoint. Health checks must stay free so k8s
-  // probes never compete with client traffic for tokens.
+  // rate-limit turns only; health probes must not compete for tokens
   app.post("/agent/turn", rateLimitMiddleware(limiter), async (c) => {
     let body: unknown;
     try {
@@ -86,8 +85,6 @@ export function createApp(deps: AppDeps = {}) {
       conversation = store.create(channel);
     }
 
-    // Capture the conversation object so the stream closure always mutates the
-    // same store entry (create already registered it by id).
     const convo = conversation;
 
     return streamSSE(c, async (stream) => {
@@ -97,8 +94,6 @@ export function createApp(deps: AppDeps = {}) {
         data: JSON.stringify({ conversationId: convo.id, channel: convo.channel }),
       });
 
-      // TurnHooks.onMessage is sync, but writeSSE is async. Chain the writes so
-      // frames stay ordered and the stream flushes before we emit `done`.
       let writes: Promise<void> = Promise.resolve();
       const enqueue = (event: string, data: unknown) => {
         writes = writes.then(() => stream.writeSSE({ event, data: JSON.stringify(data) }));

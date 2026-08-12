@@ -15,8 +15,7 @@ export interface LatencySummary {
   p99: number;
 }
 
-// Nearest-rank percentile on a pre-sorted ascending array. Empty → 0 so callers
-// can render dashboards without special-casing "no samples yet".
+// nearest-rank percentile; empty → 0 so dashboards need no empty special-case
 export function percentileOf(sortedMs: readonly number[], p: number): number {
   if (sortedMs.length === 0) return 0;
   if (p <= 0) return Math.round(sortedMs[0]!);

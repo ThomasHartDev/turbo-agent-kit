@@ -20,12 +20,12 @@ describe("SlidingWindowLog", () => {
   it("frees a slot exactly when the oldest hit leaves the window", () => {
     const clock = manualClock();
     const win = new SlidingWindowLog({ limit: 2, windowMs: 1000, clock: clock.now });
-    win.tryAcquire(); // t=0
+    win.tryAcquire();
     clock.advance(400);
-    win.tryAcquire(); // t=400
+    win.tryAcquire();
     const denied = win.tryAcquire();
     expect(denied.ok).toBe(false);
-    expect(denied.retryAfterMs).toBe(600); // first hit frees at t=1000
+    expect(denied.retryAfterMs).toBe(600);
 
     clock.advance(599);
     expect(win.tryAcquire().ok).toBe(false);
@@ -38,7 +38,7 @@ describe("SlidingWindowLog", () => {
     const win = new SlidingWindowLog({ limit: 5, windowMs: 1000, clock: clock.now });
     clock.advance(900);
     for (let i = 0; i < 5; i++) expect(win.tryAcquire().ok).toBe(true);
-    clock.advance(200); // now t=1100, a naive per-second counter would reset here
+    clock.advance(200);
     expect(win.tryAcquire().ok).toBe(false);
   });
 
@@ -48,7 +48,7 @@ describe("SlidingWindowLog", () => {
     expect(win.tryAcquire(3).ok).toBe(true);
     const r = win.tryAcquire(3); // only 2 slots left
     expect(r.ok).toBe(false);
-    expect(win.count).toBe(3); // rejected cost left no residue
+    expect(win.count).toBe(3);
     expect(r.retryAfterMs).toBe(1000);
   });
 

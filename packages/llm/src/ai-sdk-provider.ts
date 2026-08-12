@@ -32,7 +32,6 @@ export class AiSdkLLMProvider implements LLMProvider {
       tools: toToolSet(tools),
     });
 
-    // The orchestrator drives the loop, so we surface at most one decision per call.
     const call = toolCalls[0];
     if (call) {
       return {
@@ -44,7 +43,6 @@ export class AiSdkLLMProvider implements LLMProvider {
   }
 }
 
-// ToolSpec carries no parameter schema, so accept any JSON object and let the tool validate.
 const anyObject = jsonSchema<Record<string, unknown>>({
   type: "object",
   additionalProperties: true,

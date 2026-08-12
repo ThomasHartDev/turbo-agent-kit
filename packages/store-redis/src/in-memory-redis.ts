@@ -5,12 +5,9 @@ type Clock = () => number;
 
 interface Entry {
   value: string | string[];
-  expireAt?: number; // absolute ms; undefined means no expiry
+  expireAt?: number;
 }
 
-// In-process RedisPort used two ways: as the fallback substrate when no real
-// client is configured, and as the test double in CI. TTLs are enforced lazily
-// on access against an injectable clock so time-based tests stay deterministic.
 export class InMemoryRedis implements RedisPort {
   private readonly map = new Map<string, Entry>();
   private readonly clock: Clock;
@@ -69,9 +66,6 @@ export class InMemoryRedis implements RedisPort {
     if (entry) entry.expireAt = this.clock() + ttlSeconds * 1000;
   }
 
-  // The real limiter runs FIXED_WINDOW_SCRIPT on the server. Here we reproduce
-  // its INCR + PEXPIRE-on-first-hit + PTTL semantics so the TS wrapper's math is
-  // genuinely exercised without a Lua interpreter. Only the shipped script runs.
   async eval(script: string, keys: string[], args: string[]): Promise<unknown> {
     if (script !== FIXED_WINDOW_SCRIPT) {
       throw new Error("InMemoryRedis.eval only supports the fixed-window script");

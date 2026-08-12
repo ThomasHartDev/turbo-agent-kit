@@ -1,8 +1,8 @@
 import type { MiddlewareHandler } from "hono";
 import type { RateLimiter, RateLimitResult } from "@agent/rate-limiter";
 
-// Fail closed: if the limiter throws we still reject the request rather than
-// letting unbounded traffic through on a store blip.
+// fail closed: limiter errors still reject rather than open the floodgates
+
 export function rateLimitMiddleware(limiter: RateLimiter, cost = 1): MiddlewareHandler {
   return async (c, next) => {
     let result: RateLimitResult;

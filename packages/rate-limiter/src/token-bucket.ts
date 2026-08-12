@@ -55,8 +55,6 @@ export class TokenBucket implements RateLimiter {
     return { ok: false, remaining: Math.floor(this.tokens), retryAfterMs };
   }
 
-  // Continuous refill from elapsed wall time. A clock that jumps backward is
-  // ignored rather than draining the bucket or freezing `last` in the future.
   private refill(): void {
     const now = this.clock();
     if (now <= this.last) return;

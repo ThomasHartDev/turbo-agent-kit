@@ -25,9 +25,9 @@ describe("TokenBucket", () => {
       initialTokens: 0,
     });
     expect(bucket.tryAcquire().ok).toBe(false);
-    clock.advance(500); // 0.5s * 2/s = 1 token
+    clock.advance(500);
     expect(bucket.tryAcquire().ok).toBe(true);
-    clock.advance(60_000); // would refill 120, capped at 10
+    clock.advance(60_000);
     expect(bucket.availableTokens).toBe(10);
   });
 
@@ -39,7 +39,7 @@ describe("TokenBucket", () => {
       clock: clock.now,
       initialTokens: 0,
     });
-    const r = bucket.tryAcquire(2); // need 2 tokens, 4/s -> 250ms/token -> 500ms
+    const r = bucket.tryAcquire(2);
     expect(r.ok).toBe(false);
     expect(r.retryAfterMs).toBe(500);
     clock.advance(r.retryAfterMs);
@@ -63,7 +63,7 @@ describe("TokenBucket", () => {
     });
     clock.advance(-500);
     expect(bucket.availableTokens).toBe(2);
-    clock.advance(1500); // net +1000ms from start -> +1 token
+    clock.advance(1500);
     expect(bucket.availableTokens).toBe(3);
   });
 
