@@ -1,10 +1,10 @@
 # turbo-agent-kit
 
-A Turbo + pnpm monorepo for building LLM agents: agent loop, pluggable providers, rate limiting, Redis-backed session state, RAG retrieval (chunk + embed + vector search), and an HTTP server that streams turns over SSE with latency telemetry and structured logs.
+A Turbo + pnpm monorepo for building LLM agents: agent loop, pluggable providers, rate limiting, Redis-backed session state, an HTTP server that streams turns over SSE, and a Compose stack that starts the server, console, Redis, and an OTLP collector behind healthchecks.
 
 ## What this demonstrates
 
-Most "AI agent" demos are a single API call in a script. This is the infrastructure around that call: the agent loop, a tool registry, session state, retrieval-augmented grounding, streaming transport, and observability, each behind an interface so the pieces swap without a rewrite.
+Most "AI agent" demos are a single API call in a script. This is the infrastructure around that call: the agent loop, a tool registry, session state, streaming transport, and observability, each behind an interface so the pieces swap without a rewrite.
 
 ## Layout
 
@@ -13,9 +13,8 @@ Most "AI agent" demos are a single API call in a script. This is the infrastruct
 - `packages/config` — Zod-validated env loading shared across the workspace
 - `packages/rate-limiter` — token bucket, sliding-window log, and a concurrency semaphore for capping calls to a model provider
 - `packages/store-redis` — Redis-backed conversation store and distributed rate limiter behind one port, with an in-memory fallback
-- `packages/retrieval` — document chunking, pluggable embeddings, and cosine top-k vector search for RAG
 - `apps/server` — a Hono service that streams the agent over SSE and exposes latency percentiles
-- `apps/console` — a Next.js chat UI (planned)
+- `apps/console` — Next.js chat UI image plus root `docker-compose.yml` (server, console, Redis, OTEL)
 
 ## Providers
 
@@ -63,22 +62,6 @@ Empty series return zeros so scrapers can poll before traffic arrives.
 
 Every request emits one JSON line to stdout (`ts`, `level`, `service`, `msg`, `requestId`, `method`, `path`, `status`, `durationMs`). Set `LOG_LEVEL=debug|info|warn|error` (default `info`). Clients may pass `X-Request-Id`; the server echoes it (or mints a UUID) so logs join with upstream traces.
 
-## Retrieval (RAG)
-
-`packages/retrieval` chunks documents (recursive character split + overlap), embeds them through a pluggable `Embedder`, and ranks by cosine similarity. Default `HashingEmbedder` uses the hashing trick so CI needs no model server.
-
-```ts
-import { HashingEmbedder, Retriever, formatContext } from "@agent/retrieval";
-
-const retriever = new Retriever({
-  embedder: new HashingEmbedder({ dimensions: 256 }),
-  chunk: { size: 400, overlap: 60 },
-});
-await retriever.ingest([{ id: "runbook", text: "HPA watches CPU and scales replicas..." }]);
-const hits = await retriever.search("how does the autoscaler work?", { topK: 3 });
-const context = formatContext(hits); // inject into the system prompt
-```
-
 ## Stack
 
 Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, and OpenTelemetry.
@@ -108,10 +91,10 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - Dependency-injected app factory for testing HTTP handlers without a live port
 - Rate-limit middleware that fails closed and leaves health probes unmetered
 - Backpressure-safe SSE writes via a promise chain from a synchronous turn hook
-- Recursive character text splitting with overlap windows for context-preserving chunks
-- Dense vector embeddings via the hashing trick (feature hashing + L2 normalization)
-- Cosine-similarity nearest-neighbor search with top-k and min-score filtering
-- Retrieval-augmented generation (RAG) pipeline: ingest → chunk → embed → query → ground
+- Compose as a service DAG: `depends_on: service_healthy` is a readiness barrier, with cycle detection
+- Probe budget (timeout < interval) and secret interpolation (`${OPENAI_API_KEY:-}`) so compose never bakes credentials
+- Multi-stage console image: compile toolchain discarded, non-root `USER`, image HEALTHCHECK
+- Scratch OTEL collector has no shell or wget, so a thin Alpine wrapper owns the probe binary
 
 ## What's implemented
 
@@ -120,9 +103,9 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - `packages/config`: Zod-validated env/config loader shared across the workspace
 - `packages/rate-limiter`: token-bucket + sliding-window limiter and a concurrency semaphore, with refill, burst, and concurrency covered by tests
 - `packages/store-redis`: Redis-backed conversation store (atomic list appends, Zod-validated reads, sliding TTL) and a distributed fixed-window rate limiter behind a `RedisPort`, with an in-memory fallback used in tests
-- `packages/retrieval`: chunk + embed + vector search so the agent can ground answers (RAG)
 - `apps/server` (Hono): `POST /agent/turn` SSE streaming, `GET /healthz`, rate-limit middleware returning 429
 - `apps/server`: `GET /telemetry` (p50/p95/p99) and structured JSON logging
+- `apps/console` Dockerfile + `docker-compose.yml` (server + console + redis + otel-collector) with healthchecks
 
 ## Getting started
 
@@ -130,7 +113,10 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 pnpm install
 pnpm --filter @agent/core demo
 pnpm --filter @agent/server dev
+docker compose up --build
 ```
+
+`docker compose up` waits on Redis and collector probes, then server `/healthz`, then the console. The collector image wraps scratch `otel/opentelemetry-collector-contrib` on Alpine so HEALTHCHECK can run wget. Config: `deploy/otel-collector.yaml`.
 
 Run the tests with `pnpm install && pnpm test`. Typecheck with `pnpm typecheck`.
 
