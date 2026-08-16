@@ -6,7 +6,13 @@ WORKDIR /app
 
 FROM base AS deps
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/server/package.json apps/server/package.json
 COPY apps/console/package.json apps/console/package.json
+COPY packages/agent-core/package.json packages/agent-core/package.json
+COPY packages/config/package.json packages/config/package.json
+COPY packages/llm/package.json packages/llm/package.json
+COPY packages/rate-limiter/package.json packages/rate-limiter/package.json
+COPY packages/store-redis/package.json packages/store-redis/package.json
 RUN pnpm install --frozen-lockfile --filter @agent/console...
 
 FROM deps AS build

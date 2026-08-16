@@ -1,6 +1,6 @@
 # turbo-agent-kit
 
-A Turbo + pnpm monorepo for building LLM agents: agent loop, pluggable providers, rate limiting, Redis-backed session state, an HTTP server that streams turns over SSE, and a Compose stack that starts the server, console, Redis, and an OTLP collector behind healthchecks.
+A Turbo + pnpm monorepo for building LLM agents: agent loop, pluggable providers, rate limiting, Redis-backed session state, an HTTP server that streams turns over SSE, and a Compose file for the server, console, Redis, and an OTLP collector with exec-form healthchecks.
 
 ## What this demonstrates
 
@@ -14,7 +14,7 @@ Most "AI agent" demos are a single API call in a script. This is the infrastruct
 - `packages/rate-limiter` — token bucket, sliding-window log, and a concurrency semaphore for capping calls to a model provider
 - `packages/store-redis` — Redis-backed conversation store and distributed rate limiter behind one port, with an in-memory fallback
 - `apps/server` — a Hono service that streams the agent over SSE and exposes latency percentiles
-- `apps/console` — Next.js chat UI image plus root `docker-compose.yml` (server, console, Redis, OTEL)
+- `apps/console` — Next.js chat UI (`output: 'standalone'`) plus root `docker-compose.yml` (server, console, Redis, OTEL)
 
 ## Providers
 
@@ -105,7 +105,7 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - `packages/store-redis`: Redis-backed conversation store (atomic list appends, Zod-validated reads, sliding TTL) and a distributed fixed-window rate limiter behind a `RedisPort`, with an in-memory fallback used in tests
 - `apps/server` (Hono): `POST /agent/turn` SSE streaming, `GET /healthz`, rate-limit middleware returning 429
 - `apps/server`: `GET /telemetry` (p50/p95/p99) and structured JSON logging
-- `apps/console` Dockerfile + `docker-compose.yml` (server + console + redis + otel-collector) with healthchecks
+- `apps/console` Next app + `docker-compose.yml` (server + console + redis + otel-collector) with exec-form healthchecks
 
 ## Getting started
 
@@ -116,7 +116,7 @@ pnpm --filter @agent/server dev
 docker compose up --build
 ```
 
-`docker compose up` waits on Redis and collector probes, then server `/healthz`, then the console. The collector image wraps scratch `otel/opentelemetry-collector-contrib` on Alpine so HEALTHCHECK can run wget. Config: `deploy/otel-collector.yaml`.
+`docker compose up --build` builds `apps/server` and the standalone Next console, then starts Redis, the collector, the server, and the console. Compose healthchecks are exec lists (`CMD` + argv), not `CMD-SHELL` of a string that starts with `CMD`. `depends_on: service_healthy` waits on those probes. The collector image wraps scratch `otel/opentelemetry-collector-contrib` on Alpine so wget can hit `:13133`. Compose also mounts `deploy/otel-collector.yaml`.
 
 Run the tests with `pnpm install && pnpm test`. Typecheck with `pnpm typecheck`.
 

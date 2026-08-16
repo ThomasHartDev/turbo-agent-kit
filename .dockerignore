@@ -1,0 +1,13 @@
+.git
+.github
+.turbo
+.task
+**/.turbo
+**/node_modules
+**/dist
+**/.next
+**/.vite
+*.md
+.env
+.env.*
+!.env.example

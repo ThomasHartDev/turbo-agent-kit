@@ -158,10 +158,10 @@ function serviceBlocks(source: string): Record<string, string> {
 
 function readBlock(name: string, body: string): ServiceSpec {
   const field = (key: string) => body.match(new RegExp(`^ {4,}${key}:\\s*(.*)$`, "m"))?.[1];
-  const testLine = field("test");
   const interval = field("interval");
   const timeout = field("timeout");
   const retries = field("retries");
+  const probe = parseHealthcheckTest(body);
   const environment: Record<string, string> = {};
   const envBody = body.split("    environment:\n")[1]?.split(/\n    [a-z_]+:/)[0] ?? "";
   for (const line of envBody.split("\n")) {
@@ -196,13 +196,9 @@ function readBlock(name: string, body: string): ServiceSpec {
     environment,
     dependsOn,
     healthcheck:
-      testLine || interval
+      probe.length || interval
         ? {
-            test: testLine
-              ? /^CMD(?:-SHELL)?\b/.test(unquote(testLine))
-                ? unquote(testLine).split(/\s+/)
-                : ["CMD-SHELL", unquote(testLine)]
-              : [],
+            test: probe,
             intervalMs: interval ? parseDuration(unquote(interval)) : 30_000,
             timeoutMs: timeout ? parseDuration(unquote(timeout)) : 30_000,
             retries: retries ? Number(retries) : 3,
@@ -211,6 +207,42 @@ function readBlock(name: string, body: string): ServiceSpec {
     privileged: field("privileged") === "true",
     networkMode: field("network_mode") ? unquote(field("network_mode")!) : undefined,
   };
+}
+
+function parseJsonStringList(raw: string): string[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new SyntaxError("healthcheck.test is not a JSON list");
+  }
+  if (!Array.isArray(parsed) || !parsed.every((item) => typeof item === "string")) {
+    throw new SyntaxError("healthcheck.test list must be strings");
+  }
+  return parsed;
+}
+
+function parseHealthcheckTest(body: string): string[] {
+  const lines = body.split("\n");
+  const idx = lines.findIndex((line) => /^ {4,}test:\s*/.test(line));
+  if (idx === -1) return [];
+  const head = lines[idx]!.replace(/^ {4,}test:\s*/, "").trim();
+  const rest: string[] = [];
+  for (let i = idx + 1; i < lines.length; i++) {
+    const line = lines[i]!;
+    if (line.trim() === "") continue;
+    if (!/^ {6,}/.test(line)) break;
+    rest.push(line.trim());
+  }
+  const joined = [head, ...rest].filter(Boolean).join(" ");
+  if (joined.startsWith("[")) return parseJsonStringList(joined);
+  if (head) return ["CMD-SHELL", unquote(head)];
+  const items: string[] = [];
+  for (const line of rest) {
+    const item = line.match(/^-\s+(\S.*)$/);
+    if (item) items.push(unquote(item[1]!));
+  }
+  return items;
 }
 
 function unquote(raw: string): string {
