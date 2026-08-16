@@ -24,7 +24,6 @@ export class MockLLMProvider implements LLMProvider {
     const lastUser = messages[lastUserIdx]?.content.toLowerCase() ?? "";
 
     if (lastUser.includes("book") || lastUser.includes("appointment")) {
-
       return {
         kind: "tool",
         toolCall: {
