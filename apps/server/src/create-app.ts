@@ -11,6 +11,7 @@ import {
   type Message,
 } from "@agent/core";
 import { TokenBucket, type RateLimiter } from "@agent/rate-limiter";
+import { SpanTelemetry, withAgentTurn } from "@agent/telemetry";
 import { createLogger, type Logger } from "./logger";
 import { rateLimitMiddleware } from "./rate-limit";
 import { requestLogMiddleware } from "./request-log";
@@ -35,7 +36,7 @@ export function createApp(deps: AppDeps = {}) {
   const llm = deps.llm ?? new MockLLMProvider();
   const store = deps.store ?? new InMemoryConversationStore();
   const limiter = deps.limiter ?? new TokenBucket({ capacity: 30, refillPerSecond: 5 });
-  const telemetry = deps.telemetry ?? new Telemetry();
+  const telemetry = deps.telemetry ?? new SpanTelemetry();
   const logger = deps.logger ?? createLogger();
 
   const app = new Hono<{ Variables: AppVariables }>();
@@ -100,9 +101,19 @@ export function createApp(deps: AppDeps = {}) {
       };
 
       try {
-        await runAgentTurn(convo, message, llm, telemetry, {
-          onMessage: (m: Message) => enqueue("message", m),
-        });
+        await withAgentTurn(
+          {
+            conversationId: convo.id,
+            channel: convo.channel,
+            requestId: c.get("requestId"),
+            messageLength: message.length,
+          },
+          async () => {
+            await runAgentTurn(convo, message, llm, telemetry, {
+              onMessage: (m: Message) => enqueue("message", m),
+            });
+          },
+        );
         await writes;
         await stream.writeSSE({
           event: "done",
