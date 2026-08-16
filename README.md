@@ -1,20 +1,20 @@
 # turbo-agent-kit
 
-A Turbo + pnpm monorepo for building LLM agents: agent loop, pluggable providers, rate limiting, Redis-backed session state, OpenTelemetry distributed tracing, and an HTTP server that streams turns over SSE with latency telemetry and structured logs.
+A Turbo + pnpm monorepo for building LLM agents: agent loop, pluggable providers, rate limiting, Redis-backed session state, and an HTTP server that streams turns over SSE with latency telemetry, structured logs, and a multi-stage production image.
 
 ## What this demonstrates
 
-Most "AI agent" demos are a single API call in a script. This is the infrastructure around that call: the agent loop, a tool registry, session state, streaming transport, and observability, each behind an interface so the pieces swap without a rewrite. Tracing is real OpenTelemetry spans (server → LLM → tool), with OTLP export gated by env so local and CI stay quiet until a collector is configured.
+Most "AI agent" demos are a single API call in a script. This is the infrastructure around that call: the agent loop, a tool registry, session state, streaming transport, and observability, each behind an interface so the pieces swap without a rewrite.
 
 ## Layout
 
-- `packages/agent-core` — the framework-free agent loop, tools, and in-process latency telemetry
+- `packages/agent-core` — the framework-free agent loop, tools, and telemetry
 - `packages/llm` — the real LLM adapter over the Vercel AI SDK, key-gated with a mock fallback
 - `packages/config` — Zod-validated env loading shared across the workspace
 - `packages/rate-limiter` — token bucket, sliding-window log, and a concurrency semaphore for capping calls to a model provider
 - `packages/store-redis` — Redis-backed conversation store and distributed rate limiter behind one port, with an in-memory fallback
-- `packages/telemetry` — OpenTelemetry TracerProvider, parent/child spans for agent turns, env-gated OTLP HTTP exporter
 - `apps/server` — a Hono service that streams the agent over SSE and exposes latency percentiles
+- `apps/server/Dockerfile` — multi-stage image (deps, build, runtime), non-root `agent` uid, `HEALTHCHECK` on `/healthz`
 - `apps/console` — a Next.js chat UI (planned)
 
 ## Providers
@@ -44,6 +44,18 @@ pnpm --filter @agent/server dev
 
 A turn streams `meta` → `message*` → `done` as `text/event-stream`. Empty input is 400, unknown conversation ids are 404, and an empty token bucket is 429 with `Retry-After`. `/healthz` and `/telemetry` are not rate limited so probes and dashboards never steal client tokens.
 
+### Container image
+
+Four stages: `deps` copies lockfile and `package.json` only, `build` compiles and `pnpm deploy --prod`s a standalone tree, `runtime` copies that tree, drops to uid 999 (`agent`, no login shell), and probes `GET /healthz` on `127.0.0.1` with Node's `fetch`.
+
+```bash
+docker build -f apps/server/Dockerfile -t agent-server .
+docker run --rm -p 8787:8787 agent-server
+# GET http://127.0.0.1:8787/healthz
+```
+
+`.dockerignore` keeps `.git`, `node_modules`, `dist`, and `.env*` out of the daemon. `apps/server/src/image-policy.ts` parses the recipe and fails tests if the final stage is root, has `HEALTHCHECK NONE`, uses `ADD`, or bakes a secret into `ENV`/`ARG`.
+
 ### Latency telemetry
 
 `GET /telemetry` returns nearest-rank p50/p95/p99 for LLM and tool spans recorded during turns:
@@ -58,20 +70,6 @@ A turn streams `meta` → `message*` → `done` as `text/event-stream`. Empty in
 ```
 
 Empty series return zeros so scrapers can poll before traffic arrives.
-
-### OpenTelemetry spans
-
-`packages/telemetry` registers a process-wide `TracerProvider`. Each `POST /agent/turn` opens an `agent.turn` SERVER span; LLM and tool samples from the agent loop dual-write as child `agent.llm` / `agent.tool` spans via active context. OTLP export is off unless `OTEL_EXPORTER_OTLP_ENDPOINT` is set (for example `http://localhost:4318`). Optional: `OTEL_SERVICE_NAME`, `OTEL_LOG_SPANS=1` for console export.
-
-```ts
-import { initTracing, SpanTelemetry, withAgentTurn } from "@agent/telemetry";
-
-initTracing(); // OTLP only when OTEL_EXPORTER_OTLP_ENDPOINT is set
-const telemetry = new SpanTelemetry();
-await withAgentTurn({ conversationId, channel }, () =>
-  runAgentTurn(conversation, message, llm, telemetry),
-);
-```
 
 ### Structured logging
 
@@ -90,9 +88,6 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - Provider abstraction behind a narrow interface with a deterministic mock for tests
 - Structured telemetry around the agent loop
 - Nearest-rank percentile latency aggregation (p50/p95/p99) over in-process timing samples
-- Distributed tracing with OpenTelemetry spans and parent/child context propagation
-- Env-gated OTLP HTTP export (no collector required for local/CI)
-- Dual-write instrumentation: in-process latency samples plus exportable trace spans
 - Structured JSON logging (one object per line) for container log collectors
 - Request correlation IDs propagated via `X-Request-Id` and joined into log fields
 - Token-bucket rate limiting: continuous refill with a burst ceiling, and a monotonic-clock guard against backward time
@@ -109,6 +104,11 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - Dependency-injected app factory for testing HTTP handlers without a live port
 - Rate-limit middleware that fails closed and leaves health probes unmetered
 - Backpressure-safe SSE writes via a promise chain from a synchronous turn hook
+- Multi-stage image builds: the compile toolchain and `devDependencies` never land in the runtime filesystem
+- Least-privilege containers: dedicated non-root uid, no login shell, `nologin` home
+- Liveness `HEALTHCHECK` against `/healthz` on loopback, separate from the client rate-limit budget
+- Build-context minimization via `.dockerignore` so git metadata, env files, and `node_modules` never reach the daemon
+- Static image policy: parse Dockerfile instructions and fail closed on root, disabled probes, `ADD`, and secret `ENV`/`ARG`
 
 ## What's implemented
 
@@ -117,10 +117,9 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - `packages/config`: Zod-validated env/config loader shared across the workspace
 - `packages/rate-limiter`: token-bucket + sliding-window limiter and a concurrency semaphore, with refill, burst, and concurrency covered by tests
 - `packages/store-redis`: Redis-backed conversation store (atomic list appends, Zod-validated reads, sliding TTL) and a distributed fixed-window rate limiter behind a `RedisPort`, with an in-memory fallback used in tests
-- `packages/telemetry`: real OpenTelemetry spans across server → llm → tool, OTLP exporter env-gated
 - `apps/server` (Hono): `POST /agent/turn` SSE streaming, `GET /healthz`, rate-limit middleware returning 429
 - `apps/server`: `GET /telemetry` (p50/p95/p99) and structured JSON logging
-- `apps/server`: `agent.turn` root span per request with child LLM/tool spans when tracing is initialized
+- `apps/server` Dockerfile: multi-stage, non-root, HEALTHCHECK, `.dockerignore`
 
 ## Getting started
 
