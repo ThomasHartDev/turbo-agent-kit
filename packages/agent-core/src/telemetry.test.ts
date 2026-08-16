@@ -15,7 +15,6 @@ describe("percentileOf", () => {
   });
 
   it("uses nearest-rank on a sorted series", () => {
-
     const xs = Array.from({ length: 100 }, (_, i) => i + 1);
     expect(percentileOf(xs, 50)).toBe(50);
     expect(percentileOf(xs, 95)).toBe(95);

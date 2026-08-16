@@ -1,13 +1,15 @@
 import type { LLMProvider } from "./llm-provider";
 import type { Conversation, Message } from "./types";
-import { toolRegistry, toolSpecs } from "./tools";
+import { toolRegistry, toolSpecsFrom, type Tool } from "./tools";
 import type { Telemetry } from "./telemetry";
 
-const MAX_STEPS = 5;
+export const MAX_STEPS = 5;
 
 export interface TurnHooks {
-
   onMessage?: (m: Message) => void;
+  /** Swap the default registry (tests, alternate skill packs). */
+  tools?: ReadonlyMap<string, Tool>;
+  maxSteps?: number;
 }
 
 export async function runAgentTurn(
@@ -17,6 +19,10 @@ export async function runAgentTurn(
   telemetry: Telemetry,
   hooks: TurnHooks = {},
 ): Promise<void> {
+  const registry = hooks.tools ?? toolRegistry;
+  const maxSteps = hooks.maxSteps ?? MAX_STEPS;
+  const specs = toolSpecsFrom(registry);
+
   const push = (m: Message) => {
     conversation.messages.push(m);
     hooks.onMessage?.(m);
@@ -24,9 +30,9 @@ export async function runAgentTurn(
 
   push({ role: "user", content: userText });
 
-  for (let step = 0; step < MAX_STEPS; step++) {
+  for (let step = 0; step < maxSteps; step++) {
     const t0 = performance.now();
-    const result = await llm.complete(conversation.messages, toolSpecs);
+    const result = await llm.complete(conversation.messages, specs);
     telemetry.record({
       type: "llm",
       channel: conversation.channel,
@@ -45,7 +51,7 @@ export async function runAgentTurn(
       toolCall: result.toolCall,
     });
 
-    const tool = toolRegistry.get(result.toolCall.name);
+    const tool = registry.get(result.toolCall.name);
     const tt0 = performance.now();
     let output: string;
     try {
@@ -53,7 +59,9 @@ export async function runAgentTurn(
         ? await tool.run(result.toolCall.args)
         : `Unknown tool: ${result.toolCall.name}`;
     } catch (err) {
-      output = `Tool error: ${(err as Error).message}`;
+      // Keep the turn alive: models often recover when the error is in context.
+      const message = err instanceof Error ? err.message : String(err);
+      output = `Tool error: ${message}`;
     }
     telemetry.record({
       type: "tool",

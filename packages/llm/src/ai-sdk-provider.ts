@@ -32,6 +32,7 @@ export class AiSdkLLMProvider implements LLMProvider {
       tools: toToolSet(tools),
     });
 
+    // The orchestrator drives the loop, so we surface at most one decision per call.
     const call = toolCalls[0];
     if (call) {
       return {
@@ -43,14 +44,20 @@ export class AiSdkLLMProvider implements LLMProvider {
   }
 }
 
-const anyObject = jsonSchema<Record<string, unknown>>({
-  type: "object",
-  additionalProperties: true,
-});
+// Prefer the Zod-derived JSON Schema from agent-core; fall back to any-object.
+function inputSchemaFor(spec: ToolSpec) {
+  const schema =
+    spec.parameters &&
+    typeof spec.parameters === "object" &&
+    Object.keys(spec.parameters).length > 0
+      ? spec.parameters
+      : { type: "object", additionalProperties: true };
+  return jsonSchema<Record<string, unknown>>(schema);
+}
 
 function toToolSet(specs: ToolSpec[]): ToolSet {
   const entries = specs.map(
-    (s) => [s.name, tool({ description: s.description, inputSchema: anyObject })] as const,
+    (s) => [s.name, tool({ description: s.description, inputSchema: inputSchemaFor(s) })] as const,
   );
   return Object.fromEntries(entries);
 }
