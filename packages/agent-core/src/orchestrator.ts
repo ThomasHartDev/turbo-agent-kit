@@ -4,10 +4,10 @@ import { toolRegistry, toolSpecsFrom, type Tool } from "./tools";
 import type { Telemetry } from "./telemetry";
 
 export const MAX_STEPS = 5;
+export const TURN_BUDGET_MESSAGE = "Sorry, I could not complete that request";
 
 export interface TurnHooks {
   onMessage?: (m: Message) => void;
-  /** Swap the default registry (tests, alternate skill packs). */
   tools?: ReadonlyMap<string, Tool>;
   maxSteps?: number;
 }
@@ -73,5 +73,5 @@ export async function runAgentTurn(
     push({ role: "tool", content: output, toolCallId: result.toolCall.id });
   }
 
-  push({ role: "assistant", content: "Sorry, I could not complete that request" });
+  push({ role: "assistant", content: TURN_BUDGET_MESSAGE });
 }
