@@ -21,6 +21,9 @@ export async function runAgentTurn(
 ): Promise<void> {
   const registry = hooks.tools ?? toolRegistry;
   const maxSteps = hooks.maxSteps ?? MAX_STEPS;
+  if (maxSteps < 1) {
+    throw new Error(`maxSteps must be >= 1 (got ${maxSteps})`);
+  }
   const specs = toolSpecsFrom(registry);
 
   const push = (m: Message) => {

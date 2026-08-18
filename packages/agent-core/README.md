@@ -20,6 +20,8 @@ sequenceDiagram
     Agent-)Tel: record llm span
     alt final
       Agent->>User: assistant answer
+      break
+      end
     else tool_call
       Agent->>Tools: run(name, args)
       activate Tools

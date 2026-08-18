@@ -12,7 +12,8 @@ export type SequenceMessage = {
 export type SequenceStep =
   | SequenceMessage
   | { kind: "loop"; label: string; body: SequenceStep[] }
-  | { kind: "alt"; branches: { label: string; body: SequenceStep[] }[] };
+  | { kind: "alt"; branches: { label: string; body: SequenceStep[] }[] }
+  | { kind: "break"; label?: string };
 
 export type SequenceDiagram = {
   participants: readonly { id: string; label: string }[];
@@ -49,6 +50,7 @@ function walk(
   ids: Set<string>,
   counts: Map<string, number>,
   where: string,
+  inLoop = false,
 ): void {
   if (steps.length === 0) throw new Error(`empty fragment (${where})`);
 
@@ -58,7 +60,7 @@ function walk(
 
     if (step.kind === "loop") {
       const before = snapshot(ids, counts);
-      walk(step.body, ids, counts, `${here}.loop`);
+      walk(step.body, ids, counts, `${here}.loop`, true);
       if (snapshot(ids, counts) !== before) {
         throw new Error(`loop leaks activation (${here})`);
       }
@@ -73,7 +75,7 @@ function walk(
       let last: Map<string, number> | undefined;
       for (const branch of step.branches) {
         const copy = new Map(counts);
-        walk(branch.body, ids, copy, `${here}.${branch.label}`);
+        walk(branch.body, ids, copy, `${here}.${branch.label}`, inLoop);
         ends.add(snapshot(ids, copy));
         last = copy;
       }
@@ -81,6 +83,11 @@ function walk(
         throw new Error(`alt branches leave different activations (${here})`);
       }
       for (const id of ids) counts.set(id, last!.get(id) ?? 0);
+      continue;
+    }
+
+    if (step.kind === "break") {
+      if (!inLoop) throw new Error(`break outside loop (${here})`);
       continue;
     }
 
@@ -127,6 +134,12 @@ function emit(steps: readonly SequenceStep[], lines: string[], depth: number): v
         lines.push(`${pad}${i === 0 ? "alt" : "else"} ${escapeLabel(branch.label)}`);
         emit(branch.body, lines, depth + 1);
       });
+      lines.push(`${pad}end`);
+      continue;
+    }
+    if (step.kind === "break") {
+      const suffix = step.label?.trim() ? ` ${escapeLabel(step.label)}` : "";
+      lines.push(`${pad}break${suffix}`);
       lines.push(`${pad}end`);
       continue;
     }
@@ -195,7 +208,10 @@ export const AGENT_LOOP_DIAGRAM: SequenceDiagram = {
         {
           kind: "alt",
           branches: [
-            { label: "final", body: [msg("sync", "Agent", "User", "assistant answer")] },
+            {
+              label: "final",
+              body: [msg("sync", "Agent", "User", "assistant answer"), { kind: "break" }],
+            },
             {
               label: "tool_call",
               body: [

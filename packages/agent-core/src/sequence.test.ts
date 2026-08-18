@@ -91,6 +91,27 @@ describe("sequence well-formedness", () => {
       }),
       /different activations/,
     ],
+    ["break outside loop", diagram({ steps: [{ kind: "break" }] }), /break outside loop/],
+    ["invalid id", diagram({ participants: [{ id: "1x", label: "x" }] }), /invalid participant/],
+    [
+      "duplicate id",
+      diagram({
+        participants: [
+          { id: "A", label: "A" },
+          { id: "A", label: "A" },
+        ],
+      }),
+      /duplicate participant/,
+    ],
+    [
+      "short alt",
+      diagram({
+        steps: [{ kind: "alt", branches: [{ label: "only", body: [ping()] }] }],
+      }),
+      /at least two branches/,
+    ],
+    ["empty label", diagram({ steps: [ping({ label: "  " })] }), /empty message label/],
+    ["leftover activation", diagram({ steps: [ping({ activate: "to" })] }), /still activated/],
   ])("rejects %s", (_name, d, re) => {
     expect(() => assertWellFormed(d)).toThrow(re);
   });
@@ -104,6 +125,16 @@ describe("toMermaid", () => {
     );
     expect(src).toContain("Agent->>LLM: complete(history, specs)");
     expect(src).toContain("activate LLM");
+  });
+
+  it("does not place an unguarded give-up on the success path", () => {
+    const src = toMermaid(AGENT_LOOP_DIAGRAM);
+    const finalBlock = src.match(/alt final\n([\s\S]*?)\n\s+else tool_call/)?.[1];
+    expect(finalBlock).toBeDefined();
+    expect(finalBlock).toMatch(/^\s+break$/m);
+    expect(finalBlock).toMatch(/^\s+end$/m);
+    expect(finalBlock).not.toContain("give-up");
+    expect(src).toContain("Agent->>User: give-up if no final");
   });
 
   it("escapes colons in labels", () => {
@@ -133,6 +164,9 @@ describe("acceptsTrace", () => {
     [false, ["user", "llm", "final", "llm"], 5],
     [false, ["user", "llm", "tool_call", "llm"], 5],
     [false, ["user", "llm", "tool_call", "tool_result", "give_up"], 5],
+    [false, ["user", "give_up"], 0],
+    [false, ["user"], 0],
+    [false, ["user", "llm", "final"], 0],
   ])("%s %j max=%i", (ok, events, max) => {
     expect(acceptsTrace(events, max)).toBe(ok);
   });
@@ -170,6 +204,13 @@ describe("live traces match the protocol", () => {
       "give_up",
     ]);
     expect(acceptsTrace(events, 2)).toBe(true);
+  });
+
+  it("rejects maxSteps < 1 in the language and the loop", async () => {
+    expect(acceptsTrace(["user", "give_up"], 0)).toBe(false);
+    await expect(record("hello", new MockLLMProvider(), { maxSteps: 0 })).rejects.toThrow(
+      /maxSteps must be >= 1/,
+    );
   });
 });
 
