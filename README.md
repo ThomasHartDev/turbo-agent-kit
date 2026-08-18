@@ -8,14 +8,18 @@ Most "AI agent" demos are a single API call in a script. This is the infrastruct
 
 ## Layout
 
-- `packages/agent-core` — the framework-free agent loop, tools, and telemetry
+- `packages/agent-core` — the framework-free agent loop, tools, telemetry, and an executable sequence diagram of the turn protocol
 - `packages/llm` — the real LLM adapter over the Vercel AI SDK, key-gated with a mock fallback
 - `packages/config` — Zod-validated env loading shared across the workspace
 - `packages/rate-limiter` — token bucket, sliding-window log, and a concurrency semaphore for capping calls to a model provider
 - `packages/store-redis` — Redis-backed conversation store and distributed rate limiter behind one port, with an in-memory fallback
+- `packages/retrieval` — recursive chunking, hashing embedder, and in-memory cosine search
+- `packages/telemetry` — OpenTelemetry spans around HTTP turns, LLM calls, and tools
 - `apps/server` — a Hono service that streams the agent over SSE and exposes latency percentiles
 - `apps/server/Dockerfile` — multi-stage image (deps, build, runtime), non-root `agent` uid, `HEALTHCHECK` on `/healthz`
-- `apps/console` — a Next.js chat UI (planned)
+- `apps/console` — a Next.js chat UI over the SSE turn stream
+
+Each `packages/*` workspace has its own README. The agent-loop sequence diagram is generated from a typed AST in `@agent/core` and locked to `packages/agent-core/README.md`.
 
 ## Providers
 
@@ -109,6 +113,9 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - Liveness `HEALTHCHECK` against `/healthz` on loopback, separate from the client rate-limit budget
 - Build-context minimization via `.dockerignore` so git metadata, env files, and `node_modules` never reach the daemon
 - Static image policy: parse Dockerfile instructions and fail closed on root, disabled probes, `ADD`, and secret `ENV`/`ARG`
+- Sequence diagrams as an executable protocol spec: typed participants, `loop`/`alt` fragments, Mermaid rendering, activation-stack well-formedness
+- Regular language for a single agent turn: `user (llm tool_call tool_result)* llm final` or budget exhaustion
+- Documentation-as-code: the README mermaid fence is asserted equal to `toMermaid(AGENT_LOOP_DIAGRAM)`
 
 ## What's implemented
 
@@ -120,6 +127,7 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - `apps/server` (Hono): `POST /agent/turn` SSE streaming, `GET /healthz`, rate-limit middleware returning 429
 - `apps/server`: `GET /telemetry` (p50/p95/p99) and structured JSON logging
 - `apps/server` Dockerfile: multi-stage, non-root, HEALTHCHECK, `.dockerignore`
+- Per-package READMEs + a sequence diagram of the agent loop (`assertWellFormed`, `toMermaid`, `acceptsTrace`)
 
 ## Getting started
 
