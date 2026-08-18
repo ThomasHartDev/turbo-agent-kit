@@ -70,10 +70,16 @@ describe("sequence well-formedness", () => {
     ["no participants", diagram({ participants: [] }), /no participants/],
     ["unknown end", diagram({ steps: [ping({ to: "Z" })] }), /unknown to Z/],
     ["empty loop", diagram({ steps: [{ kind: "loop", label: "x", body: [] }] }), /empty fragment/],
+    ["empty opt", diagram({ steps: [{ kind: "opt", label: "x", body: [] }] }), /empty fragment/],
     ["over-deactivate", diagram({ steps: [ping({ deactivate: "to" })] }), /idle B/],
     [
       "loop leak",
       diagram({ steps: [{ kind: "loop", label: "x", body: [ping({ activate: "to" })] }] }),
+      /leaks activation/,
+    ],
+    [
+      "opt leak",
+      diagram({ steps: [{ kind: "opt", label: "x", body: [ping({ activate: "to" })] }] }),
       /leaks activation/,
     ],
     [
@@ -129,12 +135,44 @@ describe("toMermaid", () => {
 
   it("does not place an unguarded give-up on the success path", () => {
     const src = toMermaid(AGENT_LOOP_DIAGRAM);
-    const finalBlock = src.match(/alt final\n([\s\S]*?)\n\s+else tool_call/)?.[1];
-    expect(finalBlock).toBeDefined();
-    expect(finalBlock).toMatch(/^\s+break$/m);
-    expect(finalBlock).toMatch(/^\s+end$/m);
-    expect(finalBlock).not.toContain("give-up");
-    expect(src).toContain("Agent->>User: give-up if no final");
+    const lines = src.split("\n");
+    const loopIdx = lines.findIndex((line) => /^\s*loop\b/.test(line));
+    expect(loopIdx).toBeGreaterThan(-1);
+    const loopIndent = /^\s*/.exec(lines[loopIdx]!)![0].length;
+
+    let depth = 0;
+    let loopEnd = -1;
+    for (let i = loopIdx; i < lines.length; i++) {
+      const trimmed = lines[i]!.trim();
+      if (/^(loop|alt|opt|par|critical|break|rect|box)\b/.test(trimmed)) depth += 1;
+      else if (trimmed === "end") {
+        depth -= 1;
+        if (depth === 0) {
+          loopEnd = i;
+          break;
+        }
+      }
+    }
+    expect(loopEnd).toBeGreaterThan(loopIdx);
+
+    const afterLoop = lines.slice(loopEnd + 1);
+    const giveUpRel = afterLoop.findIndex((line) => line.includes("give-up"));
+    expect(giveUpRel).toBeGreaterThan(-1);
+    const giveUpLine = afterLoop[giveUpRel]!;
+    expect(/^\s*/.exec(giveUpLine)![0].length).toBeGreaterThan(loopIndent);
+    expect(afterLoop.slice(0, giveUpRel).some((line) => /^\s*(opt|alt)\b/.test(line))).toBe(true);
+    expect(
+      lines.some((line) => line.includes("give-up") && /^\s*/.exec(line)![0].length <= loopIndent),
+    ).toBe(false);
+  });
+
+  it("renders opt as a closed fragment", () => {
+    const src = toMermaid(
+      diagram({
+        steps: [{ kind: "opt", label: "maybe", body: [ping()] }],
+      }),
+    );
+    expect(src).toMatch(/opt maybe\n\s+A->>B: x\n\s+end\n/);
   });
 
   it("escapes colons in labels", () => {

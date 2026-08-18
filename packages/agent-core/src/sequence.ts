@@ -13,6 +13,7 @@ export type SequenceStep =
   | SequenceMessage
   | { kind: "loop"; label: string; body: SequenceStep[] }
   | { kind: "alt"; branches: { label: string; body: SequenceStep[] }[] }
+  | { kind: "opt"; label: string; body: SequenceStep[] }
   | { kind: "break"; label?: string };
 
 export type SequenceDiagram = {
@@ -86,6 +87,15 @@ function walk(
       continue;
     }
 
+    if (step.kind === "opt") {
+      const before = snapshot(ids, counts);
+      walk(step.body, ids, counts, `${here}.opt`, inLoop);
+      if (snapshot(ids, counts) !== before) {
+        throw new Error(`opt leaks activation (${here})`);
+      }
+      continue;
+    }
+
     if (step.kind === "break") {
       if (!inLoop) throw new Error(`break outside loop (${here})`);
       continue;
@@ -134,6 +144,12 @@ function emit(steps: readonly SequenceStep[], lines: string[], depth: number): v
         lines.push(`${pad}${i === 0 ? "alt" : "else"} ${escapeLabel(branch.label)}`);
         emit(branch.body, lines, depth + 1);
       });
+      lines.push(`${pad}end`);
+      continue;
+    }
+    if (step.kind === "opt") {
+      lines.push(`${pad}opt ${escapeLabel(step.label)}`);
+      emit(step.body, lines, depth + 1);
       lines.push(`${pad}end`);
       continue;
     }
@@ -227,6 +243,10 @@ export const AGENT_LOOP_DIAGRAM: SequenceDiagram = {
         },
       ],
     },
-    msg("sync", "Agent", "User", "give-up if no final"),
+    {
+      kind: "opt",
+      label: "no final",
+      body: [msg("sync", "Agent", "User", "give-up if no final")],
+    },
   ],
 };

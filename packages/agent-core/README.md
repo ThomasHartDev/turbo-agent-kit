@@ -31,7 +31,9 @@ sequenceDiagram
       Note over Agent: append tool message; next step
     end
   end
-  Agent->>User: give-up if no final
+  opt no final
+    Agent->>User: give-up if no final
+  end
 ```
 
 `runAgentTurn` appends the user message, then up to `MAX_STEPS` provider calls. Unknown tools and throws become tool text. Exhausting the budget emits `TURN_BUDGET_MESSAGE`.
