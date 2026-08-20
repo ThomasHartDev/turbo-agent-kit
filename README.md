@@ -117,6 +117,11 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - Regular language for a single agent turn: `user (llm tool_call tool_result)* llm final` or budget exhaustion
 - Documentation-as-code: the README mermaid fence is asserted equal to `toMermaid(AGENT_LOOP_DIAGRAM)`
 
+- Kubernetes namespace isolation and label selector contracts: Service and Deployment `matchLabels` must be a subset of the pod template labels
+- ConfigMap versus Secret: non-confidential config as strings, credentials via `secretKeyRef`
+- StatefulSet stable identity: ordinal DNS, headless Service (`clusterIP: None`), `volumeClaimTemplates`
+- Liveness versus readiness probes
+- Pod security: non-root uid via `runAsNonRoot` / `runAsUser`
 ## What's implemented
 
 - `packages/agent-core`: framework-free agent loop, tool registry, session store, telemetry, and a mock provider
@@ -129,6 +134,15 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - `apps/server` Dockerfile: multi-stage, non-root, HEALTHCHECK, `.dockerignore`
 - Per-package READMEs + a sequence diagram of the agent loop (`assertWellFormed`, `toMermaid`, `acceptsTrace`)
 
+- `packages/agent-core` — the framework-free agent loop, tools, and telemetry
+- `deploy/k8s` — namespace, server Deployment + Service, ConfigMap/Secret, Redis StatefulSet
+- `apps/console` — a Next.js chat UI (planned)
+- Kubernetes namespace isolation and label selector contracts: Service and Deployment `matchLabels` must be a subset of the pod template labels
+- ConfigMap versus Secret: non-confidential config as strings, credentials via `secretKeyRef`
+- StatefulSet stable identity: ordinal DNS, headless Service (`clusterIP: None`), `volumeClaimTemplates`
+- Liveness versus readiness probes
+- Pod security: non-root uid via `runAsNonRoot` / `runAsUser`
+- `deploy/k8s`: namespace, server Deployment + Service, ConfigMap/Secret, Redis StatefulSet
 ## Getting started
 
 ```bash
