@@ -7,11 +7,13 @@ export type RuleId =
   | "headless"
   | "stateful-identity"
   | "pvc"
+  | "fs-group"
   | "non-root"
   | "probes"
   | "config-string"
   | "config-vs-secret"
-  | "secret-ref";
+  | "secret-ref"
+  | "image";
 export type Finding = { rule: RuleId; object?: string; message: string };
 type Doc = Record<string, Yaml>;
 type Line = { indent: number; text: string; n: number };
@@ -26,6 +28,10 @@ export const REQUIRED = [
   { kind: "StatefulSet", name: "redis" },
   { kind: "Service", name: "redis" },
 ] as const;
+
+export const SERVER_IMAGE = "agent-server:local";
+export const SERVER_IMAGE_PULL_POLICY = "Never";
+export const REDIS_FS_GROUP = 999;
 
 const SECRET = /(?:^|_)(SECRET|PASSWORD|TOKEN|API[_-]?KEY|PRIVATE[_-]?KEY)$/i;
 
@@ -237,6 +243,16 @@ export function evaluateCluster(docs: readonly Doc[]): { ok: boolean; findings: 
             (item) => str(walk(rec(item), "configMapRef", "name")) === "agent-server",
           );
           if (!ok) add("config-vs-secret", "server must envFrom ConfigMap agent-server", object);
+          if (
+            str(c.image) !== SERVER_IMAGE ||
+            str(c.imagePullPolicy) !== SERVER_IMAGE_PULL_POLICY
+          ) {
+            add(
+              "image",
+              `server image must be ${SERVER_IMAGE} with imagePullPolicy ${SERVER_IMAGE_PULL_POLICY}`,
+              object,
+            );
+          }
         }
       }
     }
@@ -257,6 +273,14 @@ export function evaluateCluster(docs: readonly Doc[]): { ok: boolean; findings: 
           if (!(Array.isArray(modes) && modes.includes("ReadWriteOnce"))) {
             add("pvc", "volumeClaimTemplate must include ReadWriteOnce", object);
           }
+        }
+        const fsGroup = walk(d, "spec", "template", "spec", "securityContext", "fsGroup");
+        if (typeof fsGroup !== "number" || fsGroup === 0) {
+          add(
+            "fs-group",
+            "StatefulSet with volumeClaimTemplates needs a numeric non-zero fsGroup",
+            object,
+          );
         }
       }
     }

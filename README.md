@@ -50,8 +50,8 @@ A turn streams `meta` → `message*` → `done` as `text/event-stream`. Empty in
 Four stages: `deps` copies lockfile and `package.json` only, `build` compiles and `pnpm deploy --prod`s a standalone tree, `runtime` copies that tree, drops to uid 999 (`agent`, no login shell), and probes `GET /healthz` on `127.0.0.1` with Node's `fetch`.
 
 ```bash
-docker build -f apps/server/Dockerfile -t agent-server .
-docker run --rm -p 8787:8787 agent-server
+docker build -f apps/server/Dockerfile -t agent-server:local .
+docker run --rm -p 8787:8787 agent-server:local
 # GET http://127.0.0.1:8787/healthz
 ```
 
@@ -59,14 +59,17 @@ docker run --rm -p 8787:8787 agent-server
 
 ### Kubernetes base
 
-`deploy/k8s` is the cluster landing pad for that image. Apply the directory: a Namespace (`agent`), ConfigMap (port, Redis DNS), Secret (`OPENAI_API_KEY` via `stringData`, empty in git), Redis as a StatefulSet behind a headless Service, and a 2-replica server Deployment plus ClusterIP Service.
+`deploy/k8s` is the cluster landing pad for that image. Tag it `agent-server:local`, load it into kind or minikube, then apply. The Deployment pins `imagePullPolicy: Never` so kubelet never hits a registry for a tag that does not exist remotely.
 
 ```bash
+docker build -f apps/server/Dockerfile -t agent-server:local .
+kind load docker-image agent-server:local
+# minikube image load agent-server:local
 kubectl apply -f deploy/k8s/
 kubectl -n agent get sts,deploy,svc,cm,secret
 ```
 
-StatefulSet identity is the headless name: `redis-0.redis.agent.svc.cluster.local`, with a `volumeClaimTemplates` PVC so AOF survives a reschedule. The server injects non-secret config with `envFrom.configMapRef` and the API key with `secretKeyRef`. Tests fail closed on selector drift, a secret key in a ConfigMap, a StatefulSet whose `serviceName` is not headless, root pods, and missing probes.
+StatefulSet identity is the headless name: `redis-0.redis.agent.svc.cluster.local`, with a `volumeClaimTemplates` PVC so AOF survives a reschedule. Redis runs as uid 999 with `fsGroup: 999` so the default RWO volume is writable for AOF. The server injects non-secret config with `envFrom.configMapRef` and the API key with `secretKeyRef`. Tests fail closed on selector drift, a secret key in a ConfigMap, a StatefulSet whose `serviceName` is not headless, a PVC without `fsGroup`, a drifted image tag or pull policy, root pods, and missing probes.
 
 ### Latency telemetry
 
@@ -124,6 +127,8 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - Kubernetes namespace isolation and label selector contracts: Service and Deployment `matchLabels` must be a subset of the pod template labels
 - ConfigMap versus Secret: non-confidential config as strings, credentials via `secretKeyRef`
 - StatefulSet stable identity: ordinal DNS, headless Service (`clusterIP: None`), `volumeClaimTemplates`
+- `fsGroup` on a StatefulSet so a non-root uid can write AOF on a default RWO PVC
+- Local cluster images: pinned tag plus `imagePullPolicy: Never` after `kind load` / `minikube image load`
 - Liveness versus readiness probes
 - Pod security: non-root uid via `runAsNonRoot` / `runAsUser`
 

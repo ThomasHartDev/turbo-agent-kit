@@ -2,11 +2,22 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { REQUIRED, evaluateCluster, parseYamlDocuments, rec, type Yaml } from "./k8s-policy";
+import {
+  REDIS_FS_GROUP,
+  REQUIRED,
+  SERVER_IMAGE,
+  SERVER_IMAGE_PULL_POLICY,
+  evaluateCluster,
+  parseYamlDocuments,
+  rec,
+  type Yaml,
+} from "./k8s-policy";
 
 type Doc = Record<string, Yaml>;
 const APP = "app.kubernetes.io/name";
-const file = resolve(dirname(fileURLToPath(import.meta.url)), "../../../deploy/k8s/base.yaml");
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
+const file = resolve(root, "deploy/k8s/base.yaml");
+const readme = readFileSync(resolve(root, "README.md"), "utf8");
 const load = () => parseYamlDocuments(readFileSync(file, "utf8"));
 
 function find(docs: Doc[], kind: string, name?: string): Doc {
@@ -40,6 +51,13 @@ describe("k8s base", () => {
     for (const req of REQUIRED) expect(find(base, req.kind, req.name).kind).toBe(req.kind);
     expect(rec(find(base, "Service", "redis").spec)?.clusterIP).toBe("None");
     expect(rec(find(base, "StatefulSet").spec)?.serviceName).toBe("redis");
+    expect(rec(spec(find(base, "StatefulSet")).securityContext)?.fsGroup).toBe(REDIS_FS_GROUP);
+    expect(ctr(find(base, "Deployment")).image).toBe(SERVER_IMAGE);
+    expect(ctr(find(base, "Deployment")).imagePullPolicy).toBe(SERVER_IMAGE_PULL_POLICY);
+    expect(readme).toContain(`-t ${SERVER_IMAGE}`);
+    expect(readme).toContain(`kind load docker-image ${SERVER_IMAGE}`);
+    expect(readme).toContain(`minikube image load ${SERVER_IMAGE}`);
+    expect(readme).toContain(`imagePullPolicy: ${SERVER_IMAGE_PULL_POLICY}`);
   });
 
   it("fails closed on missing kinds and drifted invariants", () => {
@@ -54,6 +72,10 @@ describe("k8s base", () => {
       ["headless", (d) => (rec(find(d, "Service", "redis").spec)!.clusterIP = "10.0.0.1")],
       ["stateful-identity", (d) => (rec(find(d, "StatefulSet").spec)!.serviceName = "ghost")],
       ["pvc", (d) => (rec(find(d, "StatefulSet").spec)!.volumeClaimTemplates = [])],
+      ["fs-group", (d) => delete rec(spec(find(d, "StatefulSet")).securityContext)!.fsGroup],
+      ["fs-group", (d) => (rec(spec(find(d, "StatefulSet")).securityContext)!.fsGroup = 0)],
+      ["image", (d) => (ctr(dep(d)).image = "agent-server:latest")],
+      ["image", (d) => delete ctr(dep(d)).imagePullPolicy],
       ["non-root", (d) => (rec(spec(dep(d)).securityContext)!.runAsUser = 0)],
       ["probes", (d) => delete ctr(dep(d)).livenessProbe],
       ["namespace", (d) => (rec(dep(d).metadata)!.namespace = "default")],
