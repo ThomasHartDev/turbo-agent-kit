@@ -15,6 +15,7 @@ Most "AI agent" demos are a single API call in a script. This is the infrastruct
 - `packages/store-redis` — Redis-backed conversation store and distributed rate limiter behind one port, with an in-memory fallback
 - `apps/server` — a Hono service that streams the agent over SSE and exposes latency percentiles
 - `apps/server/Dockerfile` — multi-stage image (deps, build, runtime), non-root `agent` uid, `HEALTHCHECK` on `/healthz`
+- `deploy/k8s` — namespace, server Deployment + Service, ConfigMap/Secret, Redis StatefulSet
 - `apps/console` — a Next.js chat UI (planned)
 
 ## Providers
@@ -55,6 +56,17 @@ docker run --rm -p 8787:8787 agent-server
 ```
 
 `.dockerignore` keeps `.git`, `node_modules`, `dist`, and `.env*` out of the daemon. `apps/server/src/image-policy.ts` parses the recipe and fails tests if the final stage is root, has `HEALTHCHECK NONE`, uses `ADD`, or bakes a secret into `ENV`/`ARG`.
+
+### Kubernetes base
+
+`deploy/k8s` is the cluster landing pad for that image. Apply the directory: a Namespace (`agent`), ConfigMap (port, Redis DNS), Secret (`OPENAI_API_KEY` via `stringData`, empty in git), Redis as a StatefulSet behind a headless Service, and a 2-replica server Deployment plus ClusterIP Service.
+
+```bash
+kubectl apply -f deploy/k8s/
+kubectl -n agent get sts,deploy,svc,cm,secret
+```
+
+StatefulSet identity is the headless name: `redis-0.redis.agent.svc.cluster.local`, with a `volumeClaimTemplates` PVC so AOF survives a reschedule. The server injects non-secret config with `envFrom.configMapRef` and the API key with `secretKeyRef`. Tests fail closed on selector drift, a secret key in a ConfigMap, a StatefulSet whose `serviceName` is not headless, root pods, and missing probes.
 
 ### Latency telemetry
 
@@ -109,6 +121,11 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - Liveness `HEALTHCHECK` against `/healthz` on loopback, separate from the client rate-limit budget
 - Build-context minimization via `.dockerignore` so git metadata, env files, and `node_modules` never reach the daemon
 - Static image policy: parse Dockerfile instructions and fail closed on root, disabled probes, `ADD`, and secret `ENV`/`ARG`
+- Kubernetes namespace isolation and label selector contracts: Service and Deployment `matchLabels` must be a subset of the pod template labels
+- ConfigMap versus Secret: non-confidential config as strings, credentials via `secretKeyRef`
+- StatefulSet stable identity: ordinal DNS, headless Service (`clusterIP: None`), `volumeClaimTemplates`
+- Liveness versus readiness probes
+- Pod security: non-root uid via `runAsNonRoot` / `runAsUser`
 
 ## What's implemented
 
@@ -120,6 +137,7 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - `apps/server` (Hono): `POST /agent/turn` SSE streaming, `GET /healthz`, rate-limit middleware returning 429
 - `apps/server`: `GET /telemetry` (p50/p95/p99) and structured JSON logging
 - `apps/server` Dockerfile: multi-stage, non-root, HEALTHCHECK, `.dockerignore`
+- `deploy/k8s`: namespace, server Deployment + Service, ConfigMap/Secret, Redis StatefulSet
 
 ## Getting started
 
