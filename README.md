@@ -15,6 +15,7 @@ Most "AI agent" demos are a single API call in a script. This is the infrastruct
 - `packages/store-redis` — Redis-backed conversation store and distributed rate limiter behind one port, with an in-memory fallback
 - `apps/server` — a Hono service that streams the agent over SSE and exposes latency percentiles
 - `apps/server/Dockerfile` — multi-stage image (deps, build, runtime), non-root `agent` uid, `HEALTHCHECK` on `/healthz`
+- `deploy/k8s` — namespace, server Deployment + Service, ConfigMap/Secret, Redis StatefulSet
 - `apps/console` — a Next.js chat UI (planned)
 
 ## Providers
@@ -49,12 +50,26 @@ A turn streams `meta` → `message*` → `done` as `text/event-stream`. Empty in
 Four stages: `deps` copies lockfile and `package.json` only, `build` compiles and `pnpm deploy --prod`s a standalone tree, `runtime` copies that tree, drops to uid 999 (`agent`, no login shell), and probes `GET /healthz` on `127.0.0.1` with Node's `fetch`.
 
 ```bash
-docker build -f apps/server/Dockerfile -t agent-server .
-docker run --rm -p 8787:8787 agent-server
+docker build -f apps/server/Dockerfile -t agent-server:local .
+docker run --rm -p 8787:8787 agent-server:local
 # GET http://127.0.0.1:8787/healthz
 ```
 
 `.dockerignore` keeps `.git`, `node_modules`, `dist`, and `.env*` out of the daemon. `apps/server/src/image-policy.ts` parses the recipe and fails tests if the final stage is root, has `HEALTHCHECK NONE`, uses `ADD`, or bakes a secret into `ENV`/`ARG`.
+
+### Kubernetes base
+
+`deploy/k8s` is the cluster landing pad for that image. Tag it `agent-server:local`, load it into kind or minikube, then apply. The Deployment pins `imagePullPolicy: Never` so kubelet never hits a registry for a tag that does not exist remotely.
+
+```bash
+docker build -f apps/server/Dockerfile -t agent-server:local .
+kind load docker-image agent-server:local
+# minikube image load agent-server:local
+kubectl apply -f deploy/k8s/
+kubectl -n agent get sts,deploy,svc,cm,secret
+```
+
+StatefulSet identity is the headless name: `redis-0.redis.agent.svc.cluster.local`, with a `volumeClaimTemplates` PVC so AOF survives a reschedule. Redis runs as uid 999 with `fsGroup: 999` so the default RWO volume is writable for AOF. The server injects non-secret config with `envFrom.configMapRef` and the API key with `secretKeyRef`. Tests fail closed on selector drift, a secret key in a ConfigMap, a StatefulSet whose `serviceName` is not headless, a PVC without `fsGroup`, a drifted image tag or pull policy, root pods, and missing probes.
 
 ### Latency telemetry
 
@@ -109,6 +124,13 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - Liveness `HEALTHCHECK` against `/healthz` on loopback, separate from the client rate-limit budget
 - Build-context minimization via `.dockerignore` so git metadata, env files, and `node_modules` never reach the daemon
 - Static image policy: parse Dockerfile instructions and fail closed on root, disabled probes, `ADD`, and secret `ENV`/`ARG`
+- Kubernetes namespace isolation and label selector contracts: Service and Deployment `matchLabels` must be a subset of the pod template labels
+- ConfigMap versus Secret: non-confidential config as strings, credentials via `secretKeyRef`
+- StatefulSet stable identity: ordinal DNS, headless Service (`clusterIP: None`), `volumeClaimTemplates`
+- `fsGroup` on a StatefulSet so a non-root uid can write AOF on a default RWO PVC
+- Local cluster images: pinned tag plus `imagePullPolicy: Never` after `kind load` / `minikube image load`
+- Liveness versus readiness probes
+- Pod security: non-root uid via `runAsNonRoot` / `runAsUser`
 
 ## What's implemented
 
@@ -120,6 +142,7 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - `apps/server` (Hono): `POST /agent/turn` SSE streaming, `GET /healthz`, rate-limit middleware returning 429
 - `apps/server`: `GET /telemetry` (p50/p95/p99) and structured JSON logging
 - `apps/server` Dockerfile: multi-stage, non-root, HEALTHCHECK, `.dockerignore`
+- `deploy/k8s`: namespace, server Deployment + Service, ConfigMap/Secret, Redis StatefulSet
 
 ## Getting started
 
