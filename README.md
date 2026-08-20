@@ -122,6 +122,9 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - StatefulSet stable identity: ordinal DNS, headless Service (`clusterIP: None`), `volumeClaimTemplates`
 - Liveness versus readiness probes
 - Pod security: non-root uid via `runAsNonRoot` / `runAsUser`
+- `fsGroup` on a StatefulSet so a non-root uid can write AOF on a default RWO PVC
+- Local cluster images: pinned tag plus `imagePullPolicy: Never` after `kind load` / `minikube image load`
+
 ## What's implemented
 
 - `packages/agent-core`: framework-free agent loop, tool registry, session store, telemetry, and a mock provider
@@ -143,6 +146,8 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - Liveness versus readiness probes
 - Pod security: non-root uid via `runAsNonRoot` / `runAsUser`
 - `deploy/k8s`: namespace, server Deployment + Service, ConfigMap/Secret, Redis StatefulSet
+- `fsGroup` on a StatefulSet so a non-root uid can write AOF on a default RWO PVC
+- Local cluster images: pinned tag plus `imagePullPolicy: Never` after `kind load` / `minikube image load`
 ## Getting started
 
 ```bash
