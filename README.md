@@ -132,6 +132,9 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - Shift-left CI: lint, compile the container image, then `helm lint` + `helm template` as a cluster-free dry-run
 - Kubernetes deploy invariants on rendered YAML: DNS-1123 names, label/selector subset, pinned image tags, `/healthz` probes
 
+- Kubernetes Ingress: host/path routing with a named-port backend bound to a ClusterIP Service
+- Horizontal Pod Autoscaler: CPU utilization scaling, which requires a cpu request as the utilization denominator
+- Kubelet liveness vs readiness on `GET /healthz`, with detection window `failureThreshold * periodSeconds` (readiness faster than liveness) and `terminationGracePeriodSeconds` covering drain
 ## What's implemented
 
 - `packages/agent-core`: framework-free agent loop, tool registry, session store, telemetry, and a mock provider
@@ -164,6 +167,19 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - Shift-left CI: lint, compile the container image, then `helm lint` + `helm template` as a cluster-free dry-run
 - Kubernetes deploy invariants on rendered YAML: DNS-1123 names, label/selector subset, pinned image tags, `/healthz` probes
 - CI: ESLint, docker build (no push, pinned sha tag), helm lint + helm template smoke on `deploy/ci/smoke-chart`
+
+- `deploy/k8s/traffic.yaml` — Ingress, CPU HPA, and liveness/readiness probes on `/healthz`
+- Kubernetes Ingress: host/path routing with a named-port backend bound to a ClusterIP Service
+- Horizontal Pod Autoscaler: CPU utilization scaling, which requires a cpu request as the utilization denominator
+- Kubelet liveness vs readiness on `GET /healthz`, with detection window `failureThreshold * periodSeconds` (readiness faster than liveness) and `terminationGracePeriodSeconds` covering drain
+- `deploy/k8s`: Ingress + HPA + readiness/liveness probes on `/healthz`
+
+## Cluster apply
+
+```bash
+docker build -f apps/server/Dockerfile -t agent-server .
+`deploy/k8s/traffic.yaml` is the cluster edge: nginx Ingress `agent.local/` to `Service/server` (named `http` port), and an `autoscaling/v2` HPA on 70% CPU (min 2 / max 8, request `100m`). Liveness and readiness both `GET /healthz`. Detection window is `failureThreshold * periodSeconds` (readiness 10s, liveness 60s). Apply with `kubectl apply -f deploy/k8s/traffic.yaml`.
+```
 
 ## Getting started
 
