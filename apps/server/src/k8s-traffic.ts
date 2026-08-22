@@ -38,6 +38,161 @@ export function rec(v: Yaml | undefined): Doc | undefined {
   return v !== null && typeof v === "object" && !Array.isArray(v) ? v : undefined;
 }
 
+type Line = { indent: number; text: string };
+
+export function parseYamlDocs(source: string): Doc[] {
+  const chunks: string[][] = [[]];
+  for (const raw of source.replace(/\r\n/g, "\n").split("\n")) {
+    if (/^---\s*$/.test(raw.trim())) chunks.push([]);
+    else chunks[chunks.length - 1]!.push(raw);
+  }
+  return chunks.flatMap((chunk) => {
+    const lines = tokenizeYaml(chunk.join("\n"));
+    if (!lines.length) return [];
+    const value = parseYamlBlock(lines, 0, lines[0]!.indent).value;
+    const doc = rec(value);
+    return doc ? [doc] : [];
+  });
+}
+
+function tokenizeYaml(source: string): Line[] {
+  return source.split("\n").flatMap((raw) => {
+    const cut = stripYamlComment(raw);
+    if (!cut.trim()) return [];
+    return [{ indent: cut.length - cut.trimStart().length, text: cut.trim() }];
+  });
+}
+
+function stripYamlComment(raw: string): string {
+  let q: '"' | "'" | null = null;
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i]!;
+    if (q) {
+      if (ch === q) q = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") q = ch;
+    else if (ch === "#") return raw.slice(0, i).trimEnd();
+  }
+  return raw;
+}
+
+function parseYamlBlock(
+  lines: readonly Line[],
+  start: number,
+  indent: number,
+): { value: Yaml; next: number } {
+  const head = lines[start];
+  if (!head || head.indent < indent) return { value: null, next: start };
+  return head.text.startsWith("-") && (head.text === "-" || head.text.startsWith("- "))
+    ? parseYamlSeq(lines, start, indent)
+    : parseYamlMap(lines, start, indent);
+}
+
+function parseYamlMap(
+  lines: readonly Line[],
+  start: number,
+  indent: number,
+): { value: Doc; next: number } {
+  const out: Doc = {};
+  let i = start;
+  while (i < lines.length) {
+    const line = lines[i]!;
+    if (line.indent < indent) break;
+    if (line.indent > indent || isSeqItem(line.text)) break;
+    const { key, rest } = splitYamlKey(line.text);
+    i += 1;
+    if (rest !== undefined) {
+      out[key] = parseYamlScalar(rest);
+      continue;
+    }
+    const child = lines[i];
+    if (child && child.indent > indent) {
+      const nested = parseYamlBlock(lines, i, child.indent);
+      out[key] = nested.value;
+      i = nested.next;
+    } else {
+      out[key] = null;
+    }
+  }
+  return { value: out, next: i };
+}
+
+function parseYamlSeq(
+  lines: readonly Line[],
+  start: number,
+  indent: number,
+): { value: Yaml[]; next: number } {
+  const out: Yaml[] = [];
+  let i = start;
+  while (i < lines.length) {
+    const line = lines[i]!;
+    if (line.indent < indent) break;
+    if (line.indent > indent || !isSeqItem(line.text)) break;
+    const rest = line.text === "-" ? "" : line.text.slice(1).trim();
+    i += 1;
+    if (!rest) {
+      const child = lines[i];
+      if (child && child.indent > indent) {
+        const nested = parseYamlBlock(lines, i, child.indent);
+        out.push(nested.value);
+        i = nested.next;
+      } else {
+        out.push(null);
+      }
+      continue;
+    }
+    const kv = splitYamlKey(rest);
+    if (kv.rest !== undefined || /:$/.test(rest)) {
+      const item: Doc = {};
+      if (kv.rest !== undefined) item[kv.key] = parseYamlScalar(kv.rest);
+      else {
+        const child = lines[i];
+        if (child && child.indent > indent) {
+          const nested = parseYamlBlock(lines, i, child.indent);
+          item[kv.key] = nested.value;
+          i = nested.next;
+        } else item[kv.key] = null;
+      }
+      const more = lines[i];
+      if (more && more.indent > indent && !isSeqItem(more.text)) {
+        const nested = parseYamlMap(lines, i, more.indent);
+        Object.assign(item, nested.value);
+        i = nested.next;
+      }
+      out.push(item);
+    } else {
+      out.push(parseYamlScalar(rest));
+    }
+  }
+  return { value: out, next: i };
+}
+
+function isSeqItem(text: string): boolean {
+  return text === "-" || text.startsWith("- ");
+}
+
+function splitYamlKey(text: string): { key: string; rest: string | undefined } {
+  const m = text.match(/^([^:]+):(.*)$/);
+  if (!m) return { key: text, rest: undefined };
+  const rest = m[2]!.trim();
+  return { key: m[1]!.trim(), rest: rest === "" ? undefined : rest };
+}
+
+function parseYamlScalar(raw: string): Yaml {
+  if (raw === "~" || raw === "null") return null;
+  if (raw === "true") return true;
+  if (raw === "false") return false;
+  if (
+    (raw.startsWith('"') && raw.endsWith('"') && raw.length >= 2) ||
+    (raw.startsWith("'") && raw.endsWith("'") && raw.length >= 2)
+  ) {
+    return raw.slice(1, -1);
+  }
+  if (/^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(raw)) return Number(raw);
+  return raw;
+}
+
 export function cpuMillis(raw: Yaml | undefined): number {
   if (typeof raw === "number") return raw * 1000;
   if (typeof raw !== "string" || raw === "") return Number.NaN;
@@ -217,8 +372,14 @@ function walk(obj: Yaml | undefined, ...keys: string[]): Yaml | undefined {
 }
 
 const str = (v: Yaml | undefined) => (typeof v === "string" ? v : undefined);
-const num = (v: Yaml | undefined, fallback: number) =>
-  typeof v === "number" && Number.isFinite(v) ? v : fallback;
+const num = (v: Yaml | undefined, fallback: number) => {
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string" && v.trim() !== "") {
+    const n = Number(v);
+    if (Number.isFinite(n)) return n;
+  }
+  return fallback;
+};
 const nameOf = (d: Doc) => str(walk(d, "metadata", "name"));
 const id = (d: Doc) => `${str(d.kind) ?? "?"}/${nameOf(d) || "?"}`;
 function labs(v: Yaml | undefined): Record<string, string> {

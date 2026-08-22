@@ -4,10 +4,9 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   HEALTHZ,
-  INGRESS_CLASS,
-  REQUIRED,
   cpuMillis,
   evaluateTraffic,
+  parseYamlDocs,
   probeDetectionSeconds,
   probeTiming,
   rec,
@@ -19,79 +18,7 @@ const APP = "app.kubernetes.io/name";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const yamlSrc = readFileSync(resolve(root, "deploy/k8s/traffic.yaml"), "utf8");
 const readme = readFileSync(resolve(root, "README.md"), "utf8");
-
-function probe(delay: number, period: number, timeout: number, fail: number): Doc {
-  return {
-    httpGet: { path: HEALTHZ, port: "http" },
-    initialDelaySeconds: delay,
-    periodSeconds: period,
-    timeoutSeconds: timeout,
-    failureThreshold: fail,
-  };
-}
-
-const meta = { name: "server", namespace: "agent" };
-const labels = { [APP]: "server" };
-const backend = { service: { name: "server", port: { name: "http" } } };
-
-function traffic(): Doc[] {
-  return [
-    {
-      kind: "Deployment",
-      metadata: { ...meta },
-      spec: {
-        replicas: 2,
-        selector: { matchLabels: { ...labels } },
-        template: {
-          metadata: { labels: { ...labels } },
-          spec: {
-            terminationGracePeriodSeconds: 30,
-            containers: [
-              {
-                name: "server",
-                image: "agent-server:local",
-                ports: [{ name: "http", containerPort: 8787 }],
-                resources: { requests: { cpu: "100m" } },
-                livenessProbe: probe(15, 20, 3, 3),
-                readinessProbe: probe(3, 5, 2, 2),
-              },
-            ],
-          },
-        },
-      },
-    },
-    {
-      kind: "Service",
-      metadata: { ...meta },
-      spec: { selector: labels, ports: [{ name: "http", port: 8787, targetPort: "http" }] },
-    },
-    {
-      kind: "Ingress",
-      metadata: { ...meta },
-      spec: {
-        ingressClassName: INGRESS_CLASS,
-        rules: [
-          { host: "agent.local", http: { paths: [{ path: "/", pathType: "Prefix", backend }] } },
-        ],
-      },
-    },
-    {
-      kind: "HorizontalPodAutoscaler",
-      metadata: { ...meta },
-      spec: {
-        scaleTargetRef: { apiVersion: "apps/v1", kind: "Deployment", name: "server" },
-        minReplicas: 2,
-        maxReplicas: 8,
-        metrics: [
-          {
-            type: "Resource",
-            resource: { name: "cpu", target: { type: "Utilization", averageUtilization: 70 } },
-          },
-        ],
-      },
-    },
-  ];
-}
+const chart = () => parseYamlDocs(yamlSrc);
 
 function find(docs: Doc[], kind: string): Doc {
   return docs.find((d) => d.kind === kind)!;
@@ -105,13 +32,66 @@ function pathOf(d: Doc[]): Doc {
   return rec((rec(rule.http)!.paths as Yaml[])[0])!;
 }
 
+describe("parseYamlDocs", () => {
+  it("splits documents, nests maps/lists, and types scalars", () => {
+    const docs = parseYamlDocs(`
+kind: Deployment
+spec:
+  containers:
+    - name: server
+      resources:
+        requests:
+          cpu: 100m
+      livenessProbe:
+        httpGet:
+          path: /healthz
+          port: http
+        periodSeconds: 20
+        timeoutSeconds: 3
+        failureThreshold: 3
+---
+kind: HorizontalPodAutoscaler
+spec:
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource:
+        target:
+          averageUtilization: 70
+`);
+    expect(docs.map((d) => d.kind)).toEqual(["Deployment", "HorizontalPodAutoscaler"]);
+    const c = rec((rec(docs[0]!.spec)!.containers as Yaml[])[0])!;
+    const live = rec(c.livenessProbe)!;
+    expect(rec(live.httpGet)).toEqual({ path: "/healthz", port: "http" });
+    expect(rec(rec(c.resources)?.requests)?.cpu).toBe("100m");
+    expect(live.periodSeconds).toBe(20);
+    expect(live.timeoutSeconds).toBe(3);
+    expect(live.failureThreshold).toBe(3);
+    const hpa = rec(docs[1]!.spec)!;
+    expect(hpa.minReplicas).toBe(2);
+    expect(hpa.maxReplicas).toBe(8);
+    const util = rec(rec(rec((hpa.metrics as Yaml[])[0])?.resource)?.target)?.averageUtilization;
+    expect(util).toBe(70);
+    expect(typeof live.periodSeconds).toBe("number");
+    expect(typeof util).toBe("number");
+  });
+});
+
 describe("k8s traffic", () => {
-  it("locks committed YAML, probe windows, and cpu millicores", () => {
-    expect(evaluateTraffic(traffic()).findings).toEqual([]);
-    for (const req of REQUIRED) expect(yamlSrc).toContain(`kind: ${req.kind}`);
-    expect(yamlSrc).toContain(`path: ${HEALTHZ}`);
-    expect(yamlSrc).toContain("cpu: 100m");
-    expect(yamlSrc).toContain("averageUtilization: 70");
+  it("evaluates the committed chart and probe/cpu helpers", () => {
+    const parsed = chart();
+    expect(parsed.map((d) => d.kind)).toEqual([
+      "Deployment",
+      "Service",
+      "Ingress",
+      "HorizontalPodAutoscaler",
+    ]);
+    expect(evaluateTraffic(parsed).findings).toEqual([]);
+    const live = rec(ctr(find(parsed, "Deployment")).livenessProbe)!;
+    expect(rec(live.httpGet)?.path).toBe(HEALTHZ);
+    expect(live.periodSeconds).toBe(20);
+    expect(typeof live.periodSeconds).toBe("number");
     expect(readme).toContain("kubectl apply -f deploy/k8s/traffic.yaml");
     expect(cpuMillis(undefined)).toBeNaN();
     expect(cpuMillis("")).toBeNaN();
@@ -123,11 +103,19 @@ describe("k8s traffic", () => {
     expect(probeDetectionSeconds(probeTiming({ periodSeconds: 20, failureThreshold: 3 })!)).toBe(
       60,
     );
+    expect(probeDetectionSeconds(probeTiming({ periodSeconds: "5", failureThreshold: "2" })!)).toBe(
+      10,
+    );
     expect(probeTiming(undefined)).toBeUndefined();
   });
 
   it("fails closed on missing kinds and drifted invariants", () => {
     expect(evaluateTraffic([]).findings.every((f) => f.rule === "required-kind")).toBe(true);
+    expect(
+      evaluateTraffic(
+        parseYamlDocs(yamlSrc.replaceAll("path: /healthz", "path: /ready")),
+      ).findings.some((f) => f.rule === "probes"),
+    ).toBe(true);
     const dep = (d: Doc[]) => find(d, "Deployment");
     const hpa = (d: Doc[]) => rec(find(d, "HorizontalPodAutoscaler").spec)!;
     const cases: [string, (d: Doc[]) => void][] = [
@@ -150,7 +138,7 @@ describe("k8s traffic", () => {
       ["hpa-metric", (d) => (hpa(d).metrics = [])],
     ];
     for (const [rule, fn] of cases) {
-      const d = structuredClone(traffic());
+      const d = structuredClone(chart());
       fn(d);
       expect(
         evaluateTraffic(d).findings.some((f) => f.rule === rule),
