@@ -1,6 +1,6 @@
 # turbo-agent-kit
 
-A Turbo + pnpm monorepo for building LLM agents: agent loop, pluggable providers, rate limiting, Redis-backed session state, and an HTTP server that streams turns over SSE with latency telemetry, structured logs, and a multi-stage production image.
+A Turbo + pnpm monorepo for building LLM agents: agent loop, pluggable providers, rate limiting, Redis-backed session state, an HTTP server that streams turns over SSE, and a Kubernetes traffic layer (Ingress, HPA, kubelet probes on `/healthz`).
 
 ## What this demonstrates
 
@@ -15,6 +15,7 @@ Most "AI agent" demos are a single API call in a script. This is the infrastruct
 - `packages/store-redis` — Redis-backed conversation store and distributed rate limiter behind one port, with an in-memory fallback
 - `apps/server` — a Hono service that streams the agent over SSE and exposes latency percentiles
 - `apps/server/Dockerfile` — multi-stage image (deps, build, runtime), non-root `agent` uid, `HEALTHCHECK` on `/healthz`
+- `deploy/k8s/traffic.yaml` — Ingress, CPU HPA, and liveness/readiness probes on `/healthz`
 - `apps/console` — a Next.js chat UI (planned)
 
 ## Providers
@@ -55,6 +56,10 @@ docker run --rm -p 8787:8787 agent-server
 ```
 
 `.dockerignore` keeps `.git`, `node_modules`, `dist`, and `.env*` out of the daemon. `apps/server/src/image-policy.ts` parses the recipe and fails tests if the final stage is root, has `HEALTHCHECK NONE`, uses `ADD`, or bakes a secret into `ENV`/`ARG`.
+
+### Kubernetes traffic (Ingress, HPA, probes)
+
+`deploy/k8s/traffic.yaml` is the cluster edge: nginx Ingress `agent.local/` to `Service/server` (named `http` port), and an `autoscaling/v2` HPA on 70% CPU (min 2 / max 8, request `100m`). Liveness and readiness both `GET /healthz`. Detection window is `failureThreshold * periodSeconds` (readiness 10s, liveness 60s). Apply with `kubectl apply -f deploy/k8s/traffic.yaml`.
 
 ### Latency telemetry
 
@@ -109,6 +114,9 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - Liveness `HEALTHCHECK` against `/healthz` on loopback, separate from the client rate-limit budget
 - Build-context minimization via `.dockerignore` so git metadata, env files, and `node_modules` never reach the daemon
 - Static image policy: parse Dockerfile instructions and fail closed on root, disabled probes, `ADD`, and secret `ENV`/`ARG`
+- Kubernetes Ingress: host/path routing with a named-port backend bound to a ClusterIP Service
+- Horizontal Pod Autoscaler: CPU utilization scaling, which requires a cpu request as the utilization denominator
+- Kubelet liveness vs readiness on `GET /healthz`, with detection window `failureThreshold * periodSeconds` (readiness faster than liveness) and `terminationGracePeriodSeconds` covering drain
 
 ## What's implemented
 
@@ -120,6 +128,7 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - `apps/server` (Hono): `POST /agent/turn` SSE streaming, `GET /healthz`, rate-limit middleware returning 429
 - `apps/server`: `GET /telemetry` (p50/p95/p99) and structured JSON logging
 - `apps/server` Dockerfile: multi-stage, non-root, HEALTHCHECK, `.dockerignore`
+- `deploy/k8s`: Ingress + HPA + readiness/liveness probes on `/healthz`
 
 ## Getting started
 
