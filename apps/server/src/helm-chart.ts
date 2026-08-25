@@ -19,6 +19,7 @@ export type HelmContext = {
   Chart: { Name: string; Version: string; AppVersion: string };
 };
 type Action = { src: string; tl: boolean; tr: boolean; i: number; j: number };
+type Defined = { body: string; tr: boolean; endTl: boolean; endTr: boolean };
 
 const SECRET = /(?:^|_)(SECRET|PASSWORD|TOKEN|API[_-]?KEY|PRIVATE[_-]?KEY)$/i;
 const DNS = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
@@ -168,14 +169,58 @@ function lookup(ctx: HelmContext, path: string): unknown {
   return cur;
 }
 
-function atom(tok: string, ctx: HelmContext, fn: (s: string) => unknown): unknown {
+function splitTokens(s: string): string[] {
+  const out: string[] = [];
+  let i = 0;
+  while (i < s.length) {
+    while (i < s.length && /\s/.test(s[i]!)) i += 1;
+    if (i >= s.length) break;
+    if (s[i] === '"' || s[i] === "'") {
+      const qch = s[i]!;
+      let j = i + 1;
+      while (j < s.length && s[j] !== qch) j += 1;
+      out.push(s.slice(i, j + 1));
+      i = j + 1;
+      continue;
+    }
+    if (s[i] === "(") {
+      let d = 1;
+      let j = i + 1;
+      while (j < s.length && d > 0) {
+        if (s[j] === '"' || s[j] === "'") {
+          const qch = s[j]!;
+          j += 1;
+          while (j < s.length && s[j] !== qch) j += 1;
+        } else if (s[j] === "(") d += 1;
+        else if (s[j] === ")") d -= 1;
+        j += 1;
+      }
+      out.push(s.slice(i, j));
+      i = j;
+      continue;
+    }
+    let j = i;
+    while (j < s.length && !/\s/.test(s[j]!) && s[j] !== "(") j += 1;
+    out.push(s.slice(i, j));
+    i = j;
+  }
+  return out;
+}
+
+function atom(
+  tok: string,
+  ctx: HelmContext,
+  include: (name: string, c: HelmContext) => string,
+): unknown {
+  if (tok.startsWith("(") && tok.endsWith(")"))
+    return evalExpr(tok.slice(1, -1).trim(), ctx, include);
   if (q(tok)) return tok.slice(1, -1);
   if (tok === "true" || tok === "false") return tok === "true";
   if (tok === "null") return null;
   if (/^-?\d+$/.test(tok)) return Number(tok);
   if (tok === ".") return ctx;
   if (tok.startsWith(".")) return lookup(ctx, tok);
-  return fn(tok);
+  return tok;
 }
 
 function evalExpr(
@@ -186,13 +231,13 @@ function evalExpr(
   const stages = src.split("|").map((s) => s.trim());
   let acc: unknown;
   for (let s = 0; s < stages.length; s++) {
-    const parts = stages[s]!.match(/"[^"]*"|'[^']*'|\S+/g) ?? [];
-    const args = parts.slice(1).map((p) => atom(p, ctx, () => p));
+    const parts = splitTokens(stages[s]!);
+    const args = parts.slice(1).map((p) => atom(p, ctx, include));
     if (s === 0) {
       const h = parts[0]!;
       acc =
         h.startsWith(".") || q(h) || /^-?\d/.test(h)
-          ? atom(h, ctx, () => h)
+          ? atom(h, ctx, include)
           : call(h, args, ctx, include);
     } else acc = call(parts[0]!, [...args, acc], ctx, include);
   }
@@ -234,20 +279,30 @@ function stringify(v: unknown): string {
 export function evalTemplate(
   src: string,
   ctx: HelmContext,
-  inherited?: Map<string, string>,
+  inherited?: Map<string, Defined>,
 ): string {
   const all = actions(src);
-  const defs = new Map<string, string>(inherited);
+  const defs = new Map<string, Defined>(inherited);
   for (let i = 0; i < all.length; i++) {
     if (hd(all[i]!.src) !== "define") continue;
     const { endAt } = matchEnd(all, i);
-    defs.set(uq(all[i]!.src.slice(6).trim()), src.slice(all[i]!.j, all[endAt]!.i));
+    const start = all[i]!;
+    const end = all[endAt]!;
+    defs.set(uq(start.src.slice(6).trim()), {
+      body: src.slice(start.j, end.i),
+      tr: start.tr,
+      endTl: end.tl,
+      endTr: end.tr,
+    });
     i = endAt;
   }
   const include = (name: string, c: HelmContext): string => {
-    const body = defs.get(name);
-    if (body === undefined) throw new SyntaxError(`unknown template ${name}`);
-    return evalTemplate(body, c, defs);
+    const def = defs.get(name);
+    if (def === undefined) throw new SyntaxError(`unknown template ${name}`);
+    let text = evalTemplate(def.body, c, defs);
+    if (def.tr) text = text.replace(/^\s+/, "");
+    if (def.endTl) text = text.replace(/\s+$/, "");
+    return text;
   };
   let out = "";
   let pos = 0;

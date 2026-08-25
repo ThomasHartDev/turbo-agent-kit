@@ -5,6 +5,6 @@
 {{- if .Values.fullnameOverride }}
 {{- .Values.fullnameOverride | lower | trunc 63 | trimSuffix "-" }}
 {{- else }}
-{{- .Release.Name }}-{{ include "agent-kit.name" . }}
+{{- printf "%s-%s" .Release.Name (include "agent-kit.name" .) | lower | trunc 63 | trimSuffix "-" }}
 {{- end }}
 {{- end }}

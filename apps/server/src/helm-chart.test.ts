@@ -72,6 +72,28 @@ describe("helm chart", () => {
     expect(renderChart(chartDir, { nameOverride: "server" }).yaml).toContain("name: agent-server");
   });
 
+  it("truncates concatenated fullname to a DNS-1123 metadata.name", () => {
+    const dns = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
+    const { yaml, values } = renderChart(
+      chartDir,
+      { nameOverride: "a".repeat(60) },
+      { Name: "verylongrelease", Namespace: "agent", Service: "Helm" },
+    );
+    const names = [...yaml.matchAll(/^metadata:\n  name:\s+(\S+)/gm)].map((m) => m[1]!);
+    expect(names.length).toBeGreaterThan(0);
+    for (const name of names) {
+      expect(name.length).toBeLessThanOrEqual(63);
+      expect(dns.test(name)).toBe(true);
+    }
+    expect(evaluateChart(yaml, values).findings).toEqual([]);
+  });
+
+  it("strips {{- end }} left-trim from included defines", () => {
+    expect(
+      evalTemplate('{{ define "n" }}{{ .Chart.Name }}\n{{- end }}{{ include "n" . }}', ctx()),
+    ).toBe("agent-kit");
+  });
+
   it("fails closed on secrets, HPA bounds, DNS names, and replica ownership", () => {
     const { yaml, values } = renderChart(chartDir);
     expect(has("", values, "required-kind")).toBe(true);
