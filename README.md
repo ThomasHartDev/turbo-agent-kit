@@ -142,6 +142,10 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - Nearest-rank p50/p95/p99 of observed request latency, partitioned by admitted vs rate-limited
 - Telemetry isolation: LLM percentile samples accrue only for admitted turns
 
+- Helm named templates (`define` / `include`) and DNS-1123 names (`trunc 63 | trimSuffix "-"`)
+- Values overlay with deep merge; Ingress and HPA omitted when disabled
+- HPA ownership of replica count: omit Deployment `spec.replicas` when autoscaling is enabled
+- ConfigMap for non-secret config; secret-shaped keys fail the chart policy
 ## What's implemented
 
 - `packages/agent-core`: framework-free agent loop, tool registry, session store, telemetry, and a mock provider
@@ -203,11 +207,30 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - Telemetry isolation: LLM percentile samples accrue only for admitted turns
 - `apps/server`: `fireTurnBurst` integration/load harness hitting the SSE endpoint through the limiter (429 under burst, telemetry percentiles)
 
+- Helm named templates (`define` / `include`) and DNS-1123 names (`trunc 63 | trimSuffix "-"`)
+- Values overlay with deep merge; Ingress and HPA omitted when disabled
+- HPA ownership of replica count: omit Deployment `spec.replicas` when autoscaling is enabled
+- ConfigMap for non-secret config; secret-shaped keys fail the chart policy
+- Helm named templates (`define` / `include`) and DNS-1123 names (`trunc 63 | trimSuffix "-"`)
+- Values overlay with deep merge; Ingress and HPA omitted when disabled
+- HPA ownership of replica count: omit Deployment `spec.replicas` when autoscaling is enabled
+- ConfigMap for non-secret config; secret-shaped keys fail the chart policy
+- Helm named templates (`define` / `include`) and DNS-1123 names (`trunc 63 | trimSuffix "-"`)
+- Values overlay with deep merge; Ingress and HPA omitted when disabled
+- HPA ownership of replica count: omit Deployment `spec.replicas` when autoscaling is enabled
+- ConfigMap for non-secret config; secret-shaped keys fail the chart policy
+- `deploy/helm/agent-kit`: Helm chart templating Deployment, Service, Ingress, HPA, and ConfigMap from `values.yaml`
 ## Cluster apply
 
 ```bash
 docker build -f apps/server/Dockerfile -t agent-server .
 `deploy/k8s/traffic.yaml` is the cluster edge: nginx Ingress `agent.local/` to `Service/server` (named `http` port), and an `autoscaling/v2` HPA on 70% CPU (min 2 / max 8, request `100m`). Liveness and readiness both `GET /healthz`. Detection window is `failureThreshold * periodSeconds` (readiness 10s, liveness 60s). Apply with `kubectl apply -f deploy/k8s/traffic.yaml`.
+```
+
+## Cluster apply
+
+```bash
+helm template agent deploy/helm/agent-kit
 ```
 
 ## Getting started
