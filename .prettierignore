@@ -2,3 +2,4 @@ dist
 .turbo
 pnpm-lock.yaml
 .task/
+deploy/**/templates
