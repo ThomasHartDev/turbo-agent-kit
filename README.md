@@ -136,6 +136,11 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - Horizontal Pod Autoscaler: CPU utilization scaling, which requires a cpu request as the utilization denominator
 - Kubelet liveness vs readiness on `GET /healthz`, with detection window `failureThreshold * periodSeconds` (readiness faster than liveness) and `terminationGracePeriodSeconds` covering drain
 
+- Open-loop concurrent burst generation against an HTTP handler: all arrivals in flight, then join
+- Token-bucket burst ceiling under concurrent arrivals: exactly `capacity` admits when refill cannot credit mid-burst
+- Fail-closed HTTP 429 (JSON, `Retry-After`, `X-RateLimit-Remaining`) distinct from admitted SSE streams
+- Nearest-rank p50/p95/p99 of observed request latency, partitioned by admitted vs rate-limited
+- Telemetry isolation: LLM percentile samples accrue only for admitted turns
 ## What's implemented
 
 - `packages/agent-core`: framework-free agent loop, tool registry, session store, telemetry, and a mock provider
@@ -175,6 +180,27 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - Kubelet liveness vs readiness on `GET /healthz`, with detection window `failureThreshold * periodSeconds` (readiness faster than liveness) and `terminationGracePeriodSeconds` covering drain
 - `deploy/k8s`: Ingress + HPA + readiness/liveness probes on `/healthz`
 
+- Open-loop concurrent burst generation against an HTTP handler: all arrivals in flight, then join
+- Token-bucket burst ceiling under concurrent arrivals: exactly `capacity` admits when refill cannot credit mid-burst
+- Fail-closed HTTP 429 (JSON, `Retry-After`, `X-RateLimit-Remaining`) distinct from admitted SSE streams
+- Nearest-rank p50/p95/p99 of observed request latency, partitioned by admitted vs rate-limited
+- Telemetry isolation: LLM percentile samples accrue only for admitted turns
+- Open-loop concurrent burst generation against an HTTP handler: all arrivals in flight, then join
+- Token-bucket burst ceiling under concurrent arrivals: exactly `capacity` admits when refill cannot credit mid-burst
+- Fail-closed HTTP 429 (JSON, `Retry-After`, `X-RateLimit-Remaining`) distinct from admitted SSE streams
+- Nearest-rank p50/p95/p99 of observed request latency, partitioned by admitted vs rate-limited
+- Telemetry isolation: LLM percentile samples accrue only for admitted turns
+- Open-loop concurrent burst generation against an HTTP handler: all arrivals in flight, then join
+- Token-bucket burst ceiling under concurrent arrivals: exactly `capacity` admits when refill cannot credit mid-burst
+- Fail-closed HTTP 429 (JSON, `Retry-After`, `X-RateLimit-Remaining`) distinct from admitted SSE streams
+- Nearest-rank p50/p95/p99 of observed request latency, partitioned by admitted vs rate-limited
+- Telemetry isolation: LLM percentile samples accrue only for admitted turns
+- Open-loop concurrent burst generation against an HTTP handler: all arrivals in flight, then join
+- Token-bucket burst ceiling under concurrent arrivals: exactly `capacity` admits when refill cannot credit mid-burst
+- Fail-closed HTTP 429 (JSON, `Retry-After`, `X-RateLimit-Remaining`) distinct from admitted SSE streams
+- Nearest-rank p50/p95/p99 of observed request latency, partitioned by admitted vs rate-limited
+- Telemetry isolation: LLM percentile samples accrue only for admitted turns
+- `apps/server`: `fireTurnBurst` integration/load harness hitting the SSE endpoint through the limiter (429 under burst, telemetry percentiles)
 ## Cluster apply
 
 ```bash
