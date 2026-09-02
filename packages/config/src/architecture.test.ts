@@ -1,13 +1,15 @@
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   ArchGraph,
+  COMPOSE_FILES,
   DEPLOY_SERVICES,
+  HELM_CHART,
   LOCAL_COMMANDS,
-  PROD_COMMANDS,
+  PROD_TOPOLOGY,
   findCycle,
   findWorkspaceRoot,
   hpaEnabled,
@@ -45,8 +47,7 @@ describe("ArchGraph", () => {
     const diamond = parse(
       "app:app left:package right:package core:package app->left app->right left->core right->core",
     );
-    expect(topoSort(diamond)[0]).toBe("core");
-    expect(topoSort(diamond).at(-1)).toBe("app");
+    expect(topoSort(diamond)).toEqual(["core", "left", "right", "app"]);
 
     const loop = parse("p:package q:package p->q q->p");
     expect(findCycle(loop)).toEqual(["p", "q", "p"]);
@@ -82,8 +83,19 @@ describe("workspace kit, deploy overlay, docs", () => {
     const kit = kitGraph(root);
     expect(invariants(kit)).toEqual([]);
     expect(topoSort(kit)).toHaveLength(kit.ids().length);
+    expect(kit.ids()).not.toContain("redis");
+    expect(kit.ids()).not.toContain("otel-collector");
+    expect(kit.edges()).toContainEqual({
+      from: "@agent/console",
+      to: "@agent/server",
+      via: "runtime",
+    });
+    expect(kit.edges().some((e) => e.to === "redis" || e.to === "otel-collector")).toBe(false);
     const diagram = renderMermaid(kit);
     for (const id of kit.ids()) expect(diagram).toContain(`["${id}"]`);
+    expect(diagram).not.toContain('["redis"]');
+    expect(diagram).not.toContain('["otel-collector"]');
+    expect(diagram).not.toMatch(/subgraph infra/);
 
     for (const svc of DEPLOY_SERVICES) {
       expect(svc.composeReplicas).toBe(1);
@@ -98,11 +110,39 @@ describe("workspace kit, deploy overlay, docs", () => {
     const architecture = readFileSync(join(root, "docs/architecture.md"), "utf8");
     expect(architecture).toContain(diagram);
     const runbook = readFileSync(join(root, "docs/runbook.md"), "utf8");
-    for (const cmd of [...Object.values(LOCAL_COMMANDS), ...Object.values(PROD_COMMANDS)]) {
+    for (const cmd of Object.values(LOCAL_COMMANDS)) {
       expect(runbook).toContain(cmd);
     }
-    expect(runbook).toContain("service_healthy");
+    for (const note of Object.values(PROD_TOPOLOGY)) {
+      expect(runbook).toContain(note);
+    }
+    expect(runbook).toContain("intended");
     expect(runbook).toContain("HorizontalPodAutoscaler");
+    expect(runbook).toContain("in-process");
+    const readme = readFileSync(join(root, "README.md"), "utf8");
+    expect(readme).toContain("apps/console");
+    expect(readme).not.toMatch(/apps\/console.*planned/i);
+    const advertised = [
+      runbook,
+      architecture,
+      readme,
+      ...Object.values(LOCAL_COMMANDS),
+      ...Object.values(PROD_TOPOLOGY),
+    ].join("\n");
+    const hasCompose = COMPOSE_FILES.some((file) => existsSync(join(root, file)));
+    const hasHelm = existsSync(join(root, HELM_CHART));
+    if (!hasCompose) {
+      expect(advertised).not.toMatch(/docker compose up/);
+      expect(runbook).not.toContain("service_healthy");
+      expect(runbook).not.toContain("${OPENAI_API_KEY:-}");
+    } else {
+      expect(runbook).toMatch(/docker compose up --build --wait/);
+    }
+    if (!hasHelm) {
+      expect(advertised).not.toMatch(/helm (template|upgrade)/);
+    } else {
+      expect(runbook).toContain(`helm upgrade --install agent-kit ${HELM_CHART}`);
+    }
     const why = readFileSync(join(root, "docs/why-a-monorepo.md"), "utf8");
     expect(why).toMatch(/workspace:\*/);
     expect(why).toContain("^build");

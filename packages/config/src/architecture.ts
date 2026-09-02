@@ -107,6 +107,9 @@ export function topoSort(graph: ArchGraph): string[] {
       }
     }
   }
+  if (ordered.length !== graph.ids().length) {
+    throw new Error(`incomplete sort: ${ordered.length}/${graph.ids().length}`);
+  }
   return ordered;
 }
 
@@ -132,6 +135,7 @@ export function renderMermaid(graph: ArchGraph): string {
   const titles: Record<NodeKind, string> = { package: "packages", app: "apps", infra: "infra" };
   const lines = ["flowchart TB"];
   for (const kind of ["package", "app", "infra"] as const) {
+    if (groups[kind].length === 0) continue;
     const title = titles[kind];
     lines.push(`  subgraph ${title}["${title}"]`);
     for (const node of groups[kind]) lines.push(`    ${mermaidId(node.id)}["${node.id}"]`);
@@ -211,15 +215,12 @@ export function findWorkspaceRoot(start: string): string {
 
 export const RUNTIME_EDGES: readonly ArchEdge[] = [
   { from: "@agent/console", to: "@agent/server", via: "runtime" },
-  { from: "@agent/server", to: "redis", via: "runtime" },
-  { from: "@agent/server", to: "otel-collector", via: "runtime" },
 ];
 
 export function kitGraph(root: string): ArchGraph {
   const graph = new ArchGraph();
   const packages = loadWorkspace(root);
   for (const pkg of packages) graph.addNode({ id: pkg.name, kind: pkg.kind });
-  graph.addNode({ id: "redis", kind: "infra" }).addNode({ id: "otel-collector", kind: "infra" });
   for (const pkg of packages) {
     for (const dep of pkg.workspaceDeps) graph.addEdge(pkg.name, dep, "workspace");
   }
@@ -270,14 +271,23 @@ export function hpaEnabled(service: DeployService): boolean {
 }
 
 export const LOCAL_COMMANDS = {
-  up: "docker compose up --build --wait",
+  server: "pnpm --filter @agent/server dev",
+  console: "pnpm --filter @agent/console dev",
   healthz: "curl -sf http://127.0.0.1:8787/healthz",
-  console: "http://127.0.0.1:3001",
-  down: "docker compose down",
+  consoleUrl: "http://127.0.0.1:3001",
 } as const;
 
-export const PROD_COMMANDS = {
-  template: "helm template agent-kit deploy/helm/agent-kit",
-  install: "helm upgrade --install agent-kit deploy/helm/agent-kit",
-  status: "kubectl rollout status deployment/agent-kit",
+export const PROD_TOPOLOGY = {
+  redis: "StatefulSet, 1",
+  server: "Deployment 2–8, HPA, Ingress",
+  collector: "not in the chart",
 } as const;
+
+export const COMPOSE_FILES = [
+  "compose.yaml",
+  "compose.yml",
+  "docker-compose.yml",
+  "docker-compose.yaml",
+] as const;
+
+export const HELM_CHART = "deploy/helm/agent-kit";
