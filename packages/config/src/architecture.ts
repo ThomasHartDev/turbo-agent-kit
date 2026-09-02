@@ -83,6 +83,10 @@ export function findCycle(graph: ArchGraph): string[] | null {
 export function topoSort(graph: ArchGraph): string[] {
   const cycle = findCycle(graph);
   if (cycle) throw new Error(`cycle: ${cycle.join(" -> ")}`);
+  const layers = layerViolations(graph);
+  if (layers.length > 0) {
+    throw new Error(layers.map((edge) => layerLine(graph, edge)).join("; "));
+  }
   const indegree = new Map<string, number>();
   const dependents = new Map<string, string[]>();
   for (const id of graph.ids()) {
@@ -228,15 +232,17 @@ export function kitGraph(root: string): ArchGraph {
   return graph;
 }
 
+function layerLine(graph: ArchGraph, edge: ArchEdge): string {
+  const from = graph.nodes.get(edge.from)?.kind;
+  const to = graph.nodes.get(edge.to)?.kind;
+  return `layer: ${edge.from} (${from}) -> ${edge.to} (${to})`;
+}
+
 export function invariants(graph: ArchGraph): string[] {
   const problems: string[] = [];
   const cycle = findCycle(graph);
   if (cycle) problems.push(`cycle: ${cycle.join(" -> ")}`);
-  for (const edge of layerViolations(graph)) {
-    const from = graph.nodes.get(edge.from)?.kind;
-    const to = graph.nodes.get(edge.to)?.kind;
-    problems.push(`layer: ${edge.from} (${from}) -> ${edge.to} (${to})`);
-  }
+  for (const edge of layerViolations(graph)) problems.push(layerLine(graph, edge));
   return problems;
 }
 

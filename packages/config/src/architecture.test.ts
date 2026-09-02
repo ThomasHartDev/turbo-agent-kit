@@ -68,6 +68,13 @@ describe("ArchGraph", () => {
       "core->api",
       "redis->api",
     ]);
+    expect(invariants(layered)).toEqual([
+      "layer: core (package) -> api (app)",
+      "layer: redis (infra) -> api (app)",
+    ]);
+    expect(() => topoSort(layered)).toThrow(
+      "layer: core (package) -> api (app); layer: redis (infra) -> api (app)",
+    );
   });
 });
 
