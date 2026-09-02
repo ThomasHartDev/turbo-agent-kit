@@ -147,6 +147,12 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - HPA ownership of replica count: omit Deployment `spec.replicas` when autoscaling is enabled
 - ConfigMap for non-secret config; secret-shaped keys fail the chart policy
 
+- Directed acyclic graphs over workspace packages, with Kahn topological sort for build order
+- Three-color DFS cycle detection that reports the offending path
+- Layered architecture: packages, apps, and infra, with package-to-app edges rejected
+- Living architecture docs: mermaid and runbook commands checked against the graph
+- Monorepo workspace protocol (`workspace:*`) and Turbo `^build` along the DAG
+- Environment-specific deployment topology: Compose (one replica, in-process collector) vs Helm (Deployment, StatefulSet, HPA)
 ## What's implemented
 
 - `packages/agent-core`: framework-free agent loop, tool registry, session store, telemetry, and a mock provider
@@ -222,6 +228,13 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - ConfigMap for non-secret config; secret-shaped keys fail the chart policy
 - `deploy/helm/agent-kit`: Helm chart templating Deployment, Service, Ingress, HPA, and ConfigMap from `values.yaml`
 
+- Directed acyclic graphs over workspace packages, with Kahn topological sort for build order
+- Three-color DFS cycle detection that reports the offending path
+- Layered architecture: packages, apps, and infra, with package-to-app edges rejected
+- Living architecture docs: mermaid and runbook commands checked against the graph
+- Monorepo workspace protocol (`workspace:*`) and Turbo `^build` along the DAG
+- Environment-specific deployment topology: Compose (one replica, in-process collector) vs Helm (Deployment, StatefulSet, HPA)
+- Top-level architecture README + `docs/`: diagram, local(compose) vs prod(helm) runbook, why-a-monorepo
 ## Cluster apply
 
 ```bash
