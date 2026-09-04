@@ -53,9 +53,12 @@ A turn streams `meta` → `message*` → `done` as `text/event-stream`. Empty in
 Four stages: `deps` copies lockfile and `package.json` only, `build` compiles and `pnpm deploy --prod`s a standalone tree, `runtime` copies that tree, drops to uid 999 (`agent`, no login shell), and probes `GET /healthz` on `127.0.0.1` with Node's `fetch`.
 
 ```bash
-docker build -f apps/server/Dockerfile -t agent-server .
-docker run --rm -p 8787:8787 agent-server
+docker build -f apps/server/Dockerfile -t agent-server:local .
+kind load docker-image agent-server:local
+minikube image load agent-server:local
+docker run --rm -p 8787:8787 agent-server:local
 # GET http://127.0.0.1:8787/healthz
+# Kubernetes pulls this tag with imagePullPolicy: Never after kind/minikube load.
 ```
 
 `.dockerignore` keeps `.git`, `node_modules`, `dist`, and `.env*` out of the daemon. `apps/server/src/image-policy.ts` parses the recipe and fails tests if the final stage is root, has `HEALTHCHECK NONE`, uses `ADD`, or bakes a secret into `ENV`/`ARG`.
@@ -117,6 +120,14 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - Regular language for a single agent turn: `user (llm tool_call tool_result)* llm final` or budget exhaustion
 - Documentation-as-code: the README mermaid fence is asserted equal to `toMermaid(AGENT_LOOP_DIAGRAM)`
 
+- Kubernetes namespace isolation and label selector contracts: Service and Deployment `matchLabels` must be a subset of the pod template labels
+- ConfigMap versus Secret: non-confidential config as strings, credentials via `secretKeyRef`
+- StatefulSet stable identity: ordinal DNS, headless Service (`clusterIP: None`), `volumeClaimTemplates`
+- Liveness versus readiness probes
+- Pod security: non-root uid via `runAsNonRoot` / `runAsUser`
+- `fsGroup` on a StatefulSet so a non-root uid can write AOF on a default RWO PVC
+- Local cluster images: pinned tag plus `imagePullPolicy: Never` after `kind load` / `minikube image load`
+
 ## What's implemented
 
 - `packages/agent-core`: framework-free agent loop, tool registry, session store, telemetry, and a mock provider
@@ -128,6 +139,18 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - `apps/server`: `GET /telemetry` (p50/p95/p99) and structured JSON logging
 - `apps/server` Dockerfile: multi-stage, non-root, HEALTHCHECK, `.dockerignore`
 - Per-package READMEs + a sequence diagram of the agent loop (`assertWellFormed`, `toMermaid`, `acceptsTrace`)
+
+- `packages/agent-core` — the framework-free agent loop, tools, and telemetry
+- `deploy/k8s` — namespace, server Deployment + Service, ConfigMap/Secret, Redis StatefulSet
+- `apps/console` — a Next.js chat UI (planned)
+- Kubernetes namespace isolation and label selector contracts: Service and Deployment `matchLabels` must be a subset of the pod template labels
+- ConfigMap versus Secret: non-confidential config as strings, credentials via `secretKeyRef`
+- StatefulSet stable identity: ordinal DNS, headless Service (`clusterIP: None`), `volumeClaimTemplates`
+- Liveness versus readiness probes
+- Pod security: non-root uid via `runAsNonRoot` / `runAsUser`
+- `deploy/k8s`: namespace, server Deployment + Service, ConfigMap/Secret, Redis StatefulSet
+- `fsGroup` on a StatefulSet so a non-root uid can write AOF on a default RWO PVC
+- Local cluster images: pinned tag plus `imagePullPolicy: Never` after `kind load` / `minikube image load`
 
 ## Getting started
 
