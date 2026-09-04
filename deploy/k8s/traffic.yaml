@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: server
+  namespace: agent
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: server
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: server
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: server
+          image: agent-server:local
+          ports:
+            - name: http
+              containerPort: 8787
+          resources:
+            requests:
+              cpu: 100m
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 2
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: server
+  namespace: agent
+spec:
+  selector:
+    app.kubernetes.io/name: server
+  ports:
+    - name: http
+      port: 8787
+      targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: server
+  namespace: agent
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: agent.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: server
+                port:
+                  name: http
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: server
+  namespace: agent
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: server
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
