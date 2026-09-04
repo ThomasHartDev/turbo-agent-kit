@@ -24,3 +24,9 @@ Point `OTEL_EXPORTER_OTLP_ENDPOINT` at the cluster collector. Redis stays at 1 s
 | otel-collector | 1 replica                 | not in the chart             |
 | server         | 1 replica, `GET /healthz` | Deployment 2–8, HPA, Ingress |
 | console        | 1 replica                 | Deployment, 1                |
+
+## Helm
+
+```bash
+helm upgrade --install agent-kit deploy/helm/agent-kit
+```

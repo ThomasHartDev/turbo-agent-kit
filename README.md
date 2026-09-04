@@ -171,7 +171,6 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 
 - `packages/agent-core` — the framework-free agent loop, tools, and telemetry
 - `deploy/k8s` — namespace, server Deployment + Service, ConfigMap/Secret, Redis StatefulSet
-- `apps/console` — a Next.js chat UI (planned)
 - Kubernetes namespace isolation and label selector contracts: Service and Deployment `matchLabels` must be a subset of the pod template labels
 - ConfigMap versus Secret: non-confidential config as strings, credentials via `secretKeyRef`
 - StatefulSet stable identity: ordinal DNS, headless Service (`clusterIP: None`), `volumeClaimTemplates`
@@ -244,6 +243,7 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - In-process OpenTelemetry with optional OTLP export when `OTEL_EXPORTER_OTLP_ENDPOINT` is set
 - Intended deploy split: one replica locally versus a cluster Deployment, Redis StatefulSet, and HPA. Charts are not in this tree yet
 - Top-level architecture README + `docs/`: living mermaid DAG, intended local-vs-prod topology, why-a-monorepo
+
 ## Cluster apply
 
 ```bash
