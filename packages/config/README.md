@@ -43,6 +43,19 @@ Invalid configuration:
 
 The helpers are plain Zod schemas, so an object built from them still composes with `.refine`, `.transform`, and the rest of Zod.
 
+## Workspace graph
+
+`index.ts` also re-exports `./architecture`. `kitGraph` loads `packages/*` and `apps/*` from disk and overlays runtime HTTP edges that the process actually makes (console rewrite to the Hono server). `invariants` and `topoSort` fail closed on cycles and package-to-app edges. `kitGraph` itself only builds the graph. `renderMermaid` is what `docs/architecture.md` embeds.
+
+```ts
+import { findWorkspaceRoot, kitGraph, renderMermaid, topoSort } from "@agent/config";
+
+const root = findWorkspaceRoot(".");
+const graph = kitGraph(root);
+topoSort(graph);
+renderMermaid(graph);
+```
+
 ## Tests
 
 ```

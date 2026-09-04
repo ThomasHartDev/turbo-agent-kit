@@ -147,6 +147,16 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - HPA ownership of replica count: omit Deployment `spec.replicas` when autoscaling is enabled
 - ConfigMap for non-secret config; secret-shaped keys fail the chart policy
 
+- Directed acyclic graphs over workspace packages, with Kahn topological sort for build order
+- Three-color DFS cycle detection that reports the offending path
+- Layered architecture: packages, apps, and infra, with package-to-app edges rejected
+- Living architecture docs: mermaid and runbook commands checked against the graph
+- Monorepo workspace protocol (`workspace:*`) and Turbo `^build` along the DAG
+- Environment-specific deployment topology: Compose (one replica, in-process collector) vs Helm (Deployment, StatefulSet, HPA)
+- Living architecture docs: mermaid checked against the loaded graph
+- In-process OpenTelemetry with optional OTLP export when `OTEL_EXPORTER_OTLP_ENDPOINT` is set
+- Intended deploy split: one replica locally versus a cluster Deployment, Redis StatefulSet, and HPA. Charts are not in this tree yet
+
 ## What's implemented
 
 - `packages/agent-core`: framework-free agent loop, tool registry, session store, telemetry, and a mock provider
@@ -161,7 +171,6 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 
 - `packages/agent-core` — the framework-free agent loop, tools, and telemetry
 - `deploy/k8s` — namespace, server Deployment + Service, ConfigMap/Secret, Redis StatefulSet
-- `apps/console` — a Next.js chat UI (planned)
 - Kubernetes namespace isolation and label selector contracts: Service and Deployment `matchLabels` must be a subset of the pod template labels
 - ConfigMap versus Secret: non-confidential config as strings, credentials via `secretKeyRef`
 - StatefulSet stable identity: ordinal DNS, headless Service (`clusterIP: None`), `volumeClaimTemplates`
@@ -221,6 +230,19 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - HPA ownership of replica count: omit Deployment `spec.replicas` when autoscaling is enabled
 - ConfigMap for non-secret config; secret-shaped keys fail the chart policy
 - `deploy/helm/agent-kit`: Helm chart templating Deployment, Service, Ingress, HPA, and ConfigMap from `values.yaml`
+
+- Directed acyclic graphs over workspace packages, with Kahn topological sort for build order
+- Three-color DFS cycle detection that reports the offending path
+- Layered architecture: packages, apps, and infra, with package-to-app edges rejected
+- Living architecture docs: mermaid and runbook commands checked against the graph
+- Monorepo workspace protocol (`workspace:*`) and Turbo `^build` along the DAG
+- Environment-specific deployment topology: Compose (one replica, in-process collector) vs Helm (Deployment, StatefulSet, HPA)
+- Top-level architecture README + `docs/`: diagram, local(compose) vs prod(helm) runbook, why-a-monorepo
+- `apps/console` — a Next.js chat UI that streams agent turns over SSE and shows latency telemetry
+- Living architecture docs: mermaid checked against the loaded graph
+- In-process OpenTelemetry with optional OTLP export when `OTEL_EXPORTER_OTLP_ENDPOINT` is set
+- Intended deploy split: one replica locally versus a cluster Deployment, Redis StatefulSet, and HPA. Charts are not in this tree yet
+- Top-level architecture README + `docs/`: living mermaid DAG, intended local-vs-prod topology, why-a-monorepo
 
 ## Cluster apply
 
