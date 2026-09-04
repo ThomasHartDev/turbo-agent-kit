@@ -1,0 +1,30 @@
+replicaCount: 2
+nameOverride: ""
+fullnameOverride: ""
+image:
+  repository: agent-server
+  tag: local
+  pullPolicy: IfNotPresent
+service:
+  port: 8787
+config:
+  PORT: "8787"
+  LOG_LEVEL: info
+  REDIS_URL: redis://redis:6379
+ingress:
+  enabled: true
+  className: nginx
+  host: agent.local
+  path: /
+  pathType: Prefix
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 8
+  targetCPUUtilizationPercentage: 70
+resources:
+  requests:
+    cpu: 100m
+podSecurity:
+  runAsNonRoot: true
+  runAsUser: 999
