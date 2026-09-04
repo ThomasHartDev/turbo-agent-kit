@@ -151,6 +151,7 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - `deploy/k8s`: namespace, server Deployment + Service, ConfigMap/Secret, Redis StatefulSet
 - `fsGroup` on a StatefulSet so a non-root uid can write AOF on a default RWO PVC
 - Local cluster images: pinned tag plus `imagePullPolicy: Never` after `kind load` / `minikube image load`
+
 ## Getting started
 
 ```bash
