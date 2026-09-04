@@ -3,3 +3,5 @@ dist
 pnpm-lock.yaml
 .task/
 deploy/helm/**/templates
+
+deploy/**/templates
