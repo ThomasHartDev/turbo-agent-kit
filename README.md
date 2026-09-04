@@ -141,6 +141,7 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - Fail-closed HTTP 429 (JSON, `Retry-After`, `X-RateLimit-Remaining`) distinct from admitted SSE streams
 - Nearest-rank p50/p95/p99 of observed request latency, partitioned by admitted vs rate-limited
 - Telemetry isolation: LLM percentile samples accrue only for admitted turns
+
 ## What's implemented
 
 - `packages/agent-core`: framework-free agent loop, tool registry, session store, telemetry, and a mock provider
@@ -201,6 +202,7 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - Nearest-rank p50/p95/p99 of observed request latency, partitioned by admitted vs rate-limited
 - Telemetry isolation: LLM percentile samples accrue only for admitted turns
 - `apps/server`: `fireTurnBurst` integration/load harness hitting the SSE endpoint through the limiter (429 under burst, telemetry percentiles)
+
 ## Cluster apply
 
 ```bash
