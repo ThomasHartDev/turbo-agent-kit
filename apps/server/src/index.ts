@@ -5,10 +5,12 @@ import { createApp } from "./create-app";
 import { createLogger, parseLogLevel } from "./logger";
 
 export { createApp } from "./create-app";
-export type { AppDeps } from "./create-app";
+export type { App, AppDeps } from "./create-app";
 export { rateLimitMiddleware } from "./rate-limit";
 export { createLogger, parseLogLevel } from "./logger";
 export type { Logger, LogLevel, LoggerOptions } from "./logger";
+export { fireTurnBurst, latencySummary, parseSseFrames, summarizeBurst } from "./load-burst";
+export type { BurstOptions, BurstResult, LoadSample, SseEvent } from "./load-burst";
 
 const port = Number(process.env.PORT ?? 8787);
 const logger = createLogger({ level: parseLogLevel(process.env.LOG_LEVEL) });
