@@ -221,6 +221,7 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - HPA ownership of replica count: omit Deployment `spec.replicas` when autoscaling is enabled
 - ConfigMap for non-secret config; secret-shaped keys fail the chart policy
 - `deploy/helm/agent-kit`: Helm chart templating Deployment, Service, Ingress, HPA, and ConfigMap from `values.yaml`
+
 ## Cluster apply
 
 ```bash
