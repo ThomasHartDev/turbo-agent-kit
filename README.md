@@ -135,6 +135,7 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - Kubernetes Ingress: host/path routing with a named-port backend bound to a ClusterIP Service
 - Horizontal Pod Autoscaler: CPU utilization scaling, which requires a cpu request as the utilization denominator
 - Kubelet liveness vs readiness on `GET /healthz`, with detection window `failureThreshold * periodSeconds` (readiness faster than liveness) and `terminationGracePeriodSeconds` covering drain
+
 ## What's implemented
 
 - `packages/agent-core`: framework-free agent loop, tool registry, session store, telemetry, and a mock provider
