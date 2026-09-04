@@ -79,7 +79,7 @@ describe("helm chart", () => {
       { nameOverride: "a".repeat(60) },
       { Name: "verylongrelease", Namespace: "agent", Service: "Helm" },
     );
-    const names = [...yaml.matchAll(/^metadata:\n  name:\s+(\S+)/gm)].map((m) => m[1]!);
+    const names = [...yaml.matchAll(/^metadata:\n {2}name:\s+(\S+)/gm)].map((m) => m[1]!);
     expect(names.length).toBeGreaterThan(0);
     for (const name of names) {
       expect(name.length).toBeLessThanOrEqual(63);
