@@ -131,6 +131,7 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - Dockerfile/workspace copy reconciliation: every `workspace:*` dependency of the server must appear in a `COPY` or the image is incomplete
 - Shift-left CI: lint, compile the container image, then `helm lint` + `helm template` as a cluster-free dry-run
 - Kubernetes deploy invariants on rendered YAML: DNS-1123 names, label/selector subset, pinned image tags, `/healthz` probes
+
 ## What's implemented
 
 - `packages/agent-core`: framework-free agent loop, tool registry, session store, telemetry, and a mock provider
@@ -163,6 +164,7 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - Shift-left CI: lint, compile the container image, then `helm lint` + `helm template` as a cluster-free dry-run
 - Kubernetes deploy invariants on rendered YAML: DNS-1123 names, label/selector subset, pinned image tags, `/healthz` probes
 - CI: ESLint, docker build (no push, pinned sha tag), helm lint + helm template smoke on `deploy/ci/smoke-chart`
+
 ## Getting started
 
 ```bash
