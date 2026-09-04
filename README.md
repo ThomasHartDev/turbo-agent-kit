@@ -128,6 +128,10 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - `fsGroup` on a StatefulSet so a non-root uid can write AOF on a default RWO PVC
 - Local cluster images: pinned tag plus `imagePullPolicy: Never` after `kind load` / `minikube image load`
 
+- Dockerfile/workspace copy reconciliation: every `workspace:*` dependency of the server must appear in a `COPY` or the image is incomplete
+- Shift-left CI: lint, compile the container image, then `helm lint` + `helm template` as a cluster-free dry-run
+- Kubernetes deploy invariants on rendered YAML: DNS-1123 names, label/selector subset, pinned image tags, `/healthz` probes
+
 ## What's implemented
 
 - `packages/agent-core`: framework-free agent loop, tool registry, session store, telemetry, and a mock provider
@@ -151,6 +155,15 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - `deploy/k8s`: namespace, server Deployment + Service, ConfigMap/Secret, Redis StatefulSet
 - `fsGroup` on a StatefulSet so a non-root uid can write AOF on a default RWO PVC
 - Local cluster images: pinned tag plus `imagePullPolicy: Never` after `kind load` / `minikube image load`
+
+- Dockerfile/workspace copy reconciliation: every `workspace:*` dependency of the server must appear in a `COPY` or the image is incomplete
+- Shift-left CI: lint, compile the container image, then `helm lint` + `helm template` as a cluster-free dry-run
+- Kubernetes deploy invariants on rendered YAML: DNS-1123 names, label/selector subset, pinned image tags, `/healthz` probes
+- `deploy/ci/smoke-chart`: Helm chart the CI `helm lint` + `helm template` smoke renders without a cluster
+- Dockerfile/workspace copy reconciliation: every `workspace:*` dependency of the server must appear in a `COPY` or the image is incomplete
+- Shift-left CI: lint, compile the container image, then `helm lint` + `helm template` as a cluster-free dry-run
+- Kubernetes deploy invariants on rendered YAML: DNS-1123 names, label/selector subset, pinned image tags, `/healthz` probes
+- CI: ESLint, docker build (no push, pinned sha tag), helm lint + helm template smoke on `deploy/ci/smoke-chart`
 
 ## Getting started
 

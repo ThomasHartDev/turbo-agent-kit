@@ -11,6 +11,7 @@
     "build": "tsup src/index.ts --format esm --dts --clean",
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json",
+    "ci:smoke": "tsx src/ci-gates.ts",
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js"
   },
@@ -27,6 +28,7 @@
     "@types/node": "^26.1.0",
     "tsup": "^8.5.0",
     "tsx": "^4.20.6",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "yaml": "^2.8.1"
   }
 }

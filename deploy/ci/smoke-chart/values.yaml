@@ -1,0 +1,6 @@
+replicaCount: 2
+port: 8787
+image:
+  repository: agent-server
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent

@@ -12,6 +12,9 @@ COPY packages/config/package.json packages/config/package.json
 COPY packages/llm/package.json packages/llm/package.json
 COPY packages/rate-limiter/package.json packages/rate-limiter/package.json
 COPY packages/store-redis/package.json packages/store-redis/package.json
+COPY packages/telemetry/package.json packages/telemetry/package.json
+COPY packages/retrieval/package.json packages/retrieval/package.json
+COPY apps/console/package.json apps/console/package.json
 RUN pnpm install --frozen-lockfile --filter @agent/server...
 
 FROM deps AS build
@@ -19,6 +22,7 @@ COPY tsconfig.base.json ./
 COPY packages/agent-core packages/agent-core
 COPY packages/llm packages/llm
 COPY packages/rate-limiter packages/rate-limiter
+COPY packages/telemetry packages/telemetry
 COPY apps/server apps/server
 RUN pnpm --filter @agent/server... build \
  && printf 'inject-workspace-packages=true\n' >> .npmrc \

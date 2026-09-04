@@ -1,0 +1,6 @@
+apiVersion: v2
+name: smoke-chart
+description: Chart the CI helm-lint and helm-template smoke gates run against
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

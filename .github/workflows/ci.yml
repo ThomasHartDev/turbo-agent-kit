@@ -16,7 +16,41 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
       - run: pnpm format:check
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build --file apps/server/Dockerfile --tag "agent-server:sha-${GITHUB_SHA:0:12}" .
+
+  helm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: |
+          set -euo pipefail
+          shopt -s globstar nullglob
+          charts=(deploy/**/Chart.yaml)
+          test ${#charts[@]} -gt 0
+          mkdir -p /tmp/helm-smoke
+          for file in "${charts[@]}"; do
+            dir=$(dirname "$file")
+            helm lint "$dir"
+            helm template "ci-$(basename "$dir")" "$dir" --set image.tag="sha-${GITHUB_SHA:0:12}" \
+              > "/tmp/helm-smoke/$(basename "$dir").yaml"
+          done
+      - run: pnpm --filter @agent/server exec tsx src/ci-gates.ts /tmp/helm-smoke/*.yaml
