@@ -146,6 +146,7 @@ Turborepo, pnpm workspaces, TypeScript, Zod, Hono, the Vercel AI SDK, Next.js, a
 - Values overlay with deep merge; Ingress and HPA omitted when disabled
 - HPA ownership of replica count: omit Deployment `spec.replicas` when autoscaling is enabled
 - ConfigMap for non-secret config; secret-shaped keys fail the chart policy
+
 ## What's implemented
 
 - `packages/agent-core`: framework-free agent loop, tool registry, session store, telemetry, and a mock provider
