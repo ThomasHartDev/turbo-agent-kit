@@ -53,9 +53,12 @@ A turn streams `meta` → `message*` → `done` as `text/event-stream`. Empty in
 Four stages: `deps` copies lockfile and `package.json` only, `build` compiles and `pnpm deploy --prod`s a standalone tree, `runtime` copies that tree, drops to uid 999 (`agent`, no login shell), and probes `GET /healthz` on `127.0.0.1` with Node's `fetch`.
 
 ```bash
-docker build -f apps/server/Dockerfile -t agent-server .
-docker run --rm -p 8787:8787 agent-server
+docker build -f apps/server/Dockerfile -t agent-server:local .
+kind load docker-image agent-server:local
+minikube image load agent-server:local
+docker run --rm -p 8787:8787 agent-server:local
 # GET http://127.0.0.1:8787/healthz
+# Kubernetes pulls this tag with imagePullPolicy: Never after kind/minikube load.
 ```
 
 `.dockerignore` keeps `.git`, `node_modules`, `dist`, and `.env*` out of the daemon. `apps/server/src/image-policy.ts` parses the recipe and fails tests if the final stage is root, has `HEALTHCHECK NONE`, uses `ADD`, or bakes a secret into `ENV`/`ARG`.
